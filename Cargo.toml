@@ -1,0 +1,29 @@
+[package]
+name = "horizon"
+description = "The software that powers VilaHack"
+keywords = [ "ctf" ]
+
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+
+license-file = "LICENSE"
+readme = "README.md"
+
+homepage = "https://vilahack.com/"
+authors = [ "pol-epsevg <pol@vilahack.com>" ]
+repository = "https://github.com/VilaHack/Horizon"
+
+[dependencies]
+
+[profile.release]
+lto = 'fat' # Perform link time optimizations for the whole dependency graph
+codegen-units = 1 # Sacrifice compilation speed for a faster binary
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
