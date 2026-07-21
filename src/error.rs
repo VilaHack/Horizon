@@ -19,6 +19,24 @@ pub struct Error {
 }
 
 impl Error {
+    /// Create source error
+    pub fn new(
+        kind: ErrorKind,
+        message: String,
+        request_id: Uuid,
+        context: impl Into<&'static str>,
+    ) -> Self {
+        let context = vec![context.into()];
+
+        Self {
+            kind,
+            message,
+            request_id,
+            context,
+            source: None,
+        }
+    }
+
     /// Return the error's kind
     #[must_use]
     pub fn kind(self) -> ErrorKind {
@@ -32,19 +50,45 @@ impl Error {
     }
 }
 
-pub trait Context {
-    #[must_use]
-    fn add_context(self, context: impl Into<&'static str>) -> Self;
+pub trait Context<T> {
+    /// Convert to Horizon's error type if it isn's already and add context if the result is an `Error`
+    ///
+    /// # Errors
+    /// It returns the same exact Result variant, as the one it's called on, it just converts
+    /// whatever error type it carries into Horizon's `Error` type.
+    fn context(self, context: impl Into<&'static str>) -> Result<T, Error>;
+
+    /// Convert to Horizon's error type if it isn't already and add context if the result is an `Error`, including the `request_id`
+    ///
+    /// # Errors
+    /// It returns the same exact Result variant, as the one it's called on, it just converts
+    /// whatever error type it carries into Horizon's `Error` type.
+    fn root_context(self, context: impl Into<&'static str>, request_id: Uuid) -> Result<T, Error>;
 }
 
-impl<T> Context for Result<T, Error> {
-    /// Add context if the result is an `Error`
-    fn add_context(mut self, context: impl Into<&'static str>) -> Self {
-        if let Err(ref mut error) = self {
+impl<T, E> Context<T> for Result<T, E>
+where
+    Error: From<E>,
+{
+    fn context(self, context: impl Into<&'static str>) -> Result<T, Error> {
+        let mut mapped: Result<T, Error> = self.map_err(Into::into);
+
+        if let Err(ref mut error) = mapped {
             error.context.push(context.into());
         }
 
-        self
+        mapped
+    }
+
+    fn root_context(self, context: impl Into<&'static str>, request_id: Uuid) -> Result<T, Error> {
+        let mut mapped: Result<T, Error> = self.map_err(Into::into);
+
+        if let Err(ref mut error) = mapped {
+            error.context.push(context.into());
+            error.request_id = request_id;
+        }
+
+        mapped
     }
 }
 
@@ -52,27 +96,13 @@ impl<T> Context for Result<T, Error> {
 #[derive(
     Copy, Clone, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
+#[serde(rename_all = "snake_case")]
 pub enum ErrorKind {
     // Authentication
-    /// The JWT's issuer is not added to the configuration's `trusted_issuers` list
-    JwtInvalidIssuer,
-    /// The JWT's alg field is either missing, invalid or indicates an unsupported algorythm
-    JwtInvalidAlgorythm,
-    /// The JWT's signature does not match
-    JwtInvalidSignature,
-    /// The JWT's claim has an invalid format (for example, a string in place of an integer)
-    JwtInvalidClaimFormat,
-    /// The API call requires a JWT, and it was not provided
-    JwtMissing,
-    /// The JWT is either expired or immature
-    JwtInvalidTimeRange,
-    /// When signing a token, the secret key is not valid for the selected algorythm
-    #[serde(rename = "unexpected")]
-    JwtInvalidKey,
     /// When logging in, the credentials do not evaluate to any user's account
     InvalidCredentials,
-    /// The JWT has been authenticated but doesn't grant sufficient permissions for the operation
-    InsufficientPermissions,
+    /// When attempting to do any authenticated operation, the provided session was not found
+    SessionNotFound,
 
     // General
     /// Something unexpected happened. See the message and the source for more information
@@ -83,21 +113,26 @@ pub enum ErrorKind {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let http_code = match self.kind {
-            ErrorKind::JwtInvalidIssuer
-            | ErrorKind::JwtInvalidAlgorythm
-            | ErrorKind::JwtInvalidSignature
-            | ErrorKind::JwtInvalidClaimFormat
-            | ErrorKind::JwtMissing
-            | ErrorKind::JwtInvalidTimeRange
-            | ErrorKind::InvalidCredentials
-            | ErrorKind::InsufficientPermissions => StatusCode::UNAUTHORIZED,
+            ErrorKind::InvalidCredentials | ErrorKind::SessionNotFound => StatusCode::UNAUTHORIZED,
 
-            ErrorKind::Unexpected | ErrorKind::JwtInvalidKey => {
+            ErrorKind::Unexpected => {
                 log::warn!("{self:#?}");
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         };
 
         (http_code, Json(self)).into_response()
+    }
+}
+
+impl From<mongodb::error::Error> for Error {
+    fn from(value: mongodb::error::Error) -> Self {
+        Self {
+            kind: ErrorKind::Unexpected,
+            message: "Something unexpected happened".into(),
+            request_id: Uuid::new(),
+            context: vec!["MongoDB database operation"],
+            source: Some(anyhow::Error::new(value)),
+        }
     }
 }
