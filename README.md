@@ -8,3 +8,32 @@ You can see a complete deployment example over at [VilaHack's infrastructure dec
 
 ### Horizon's configuration
 You can find a configuration file example in the [examples directory](https://github.com/VilaHack/Horizon/tree/trunk/examples)
+
+## Features
+- [ ] Authentication
+  - [ ] Sign up and log in
+  - [ ] Email verification and password reset
+  - [ ] Session based authentication
+  - [ ] Access scopes
+- [ ] Applications
+  - [ ] Application submission
+  - [ ] Application review
+- [ ] Attendance
+  - [ ] Check-in
+  - [ ] Activity participation and bingo
+- [ ] Teams
+  - [ ] Customizable maximum team size
+  - [ ] Team name, location and picture
+  - [ ] Team score and evolution
+- [ ] Puzzles
+  - [ ] Customizable clues
+  - [ ] Per puzzle file generators
+  - [ ] Per puzzle flag check algorythm
+  - [ ] Download files in chunks
+  - [ ] Organizer help request
+  - [ ] Cheating detection
+  - [ ] Zero downtime puzzle updates
+  - [ ] Realtime global evolution stats
+- [ ] Telemetry
+  - [ ] Usage analytics
+  - [ ] Logging
