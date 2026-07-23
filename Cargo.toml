@@ -30,8 +30,13 @@ hmac = "0.13"
 rand = { version = "0.10", features = ["thread_rng"] }
 sha2 = "0.11"
 
+# Email
+lettre = { version = "0.11", features = ["tokio1-native-tls", "serde", "builder"] }
+liquid = "0.26"
+
 # Serialization / Deserialization
 serde = { version = "1", features = ["serde_derive"] }
+toml = "1"
 
 # Observability
 log = "0.4"

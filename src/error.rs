@@ -11,7 +11,7 @@ use axum::{
 pub struct Error {
     kind: ErrorKind,
     message: String,
-    request_id: Uuid,
+    request_id: Option<Uuid>,
     #[serde(skip_serializing)]
     context: Vec<&'static str>,
     #[serde(skip_serializing)]
@@ -23,7 +23,7 @@ impl Error {
     pub fn new(
         kind: ErrorKind,
         message: String,
-        request_id: Uuid,
+        request_id: Option<Uuid>,
         context: impl Into<&'static str>,
     ) -> Self {
         let context = vec![context.into()];
@@ -34,6 +34,30 @@ impl Error {
             request_id,
             context,
             source: None,
+        }
+    }
+
+    /// Create a new error with a source
+    ///
+    /// This is a utility function for when implementing `From` for `Error` is not worth it.
+    /// This is used for example when dealing with toml serialization errors. The configuration file
+    /// is only ever read once, and thus only one error is ever going to be possibly handled. Thus,
+    /// it's not worth it to implement From, for that singular error.
+    pub fn new_with_source(
+        kind: ErrorKind,
+        message: String,
+        request_id: Option<Uuid>,
+        context: impl Into<&'static str>,
+        source: anyhow::Error,
+    ) -> Self {
+        let context = vec![context.into()];
+
+        Self {
+            kind,
+            message,
+            request_id,
+            context,
+            source: Some(source),
         }
     }
 
@@ -85,7 +109,7 @@ where
 
         if let Err(ref mut error) = mapped {
             error.context.push(context.into());
-            error.request_id = request_id;
+            error.request_id = Some(request_id);
         }
 
         mapped
@@ -130,8 +154,20 @@ impl From<mongodb::error::Error> for Error {
         Self {
             kind: ErrorKind::Unexpected,
             message: "Something unexpected happened".into(),
-            request_id: Uuid::new(),
+            request_id: None,
             context: vec!["MongoDB database operation"],
+            source: Some(anyhow::Error::new(value)),
+        }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Self {
+            kind: ErrorKind::Unexpected,
+            message: "Something unexpected happened".into(),
+            request_id: None,
+            context: vec!["IO operation"],
             source: Some(anyhow::Error::new(value)),
         }
     }

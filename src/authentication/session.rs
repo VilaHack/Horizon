@@ -65,7 +65,7 @@ impl Session {
                 ErrorKind::Unexpected,
                 "Something unexpected happened while trying to create a new session for the user"
                     .into(),
-                request_id,
+                Some(request_id),
                 "Attempting to create a new session, the passed user doesn't exist",
             ));
         };
@@ -122,7 +122,7 @@ impl Session {
             Err(Error::new(
                 ErrorKind::SessionNotFound,
                 "Could not issue a new anti-CSRF token, the session it was requested for was not found".into(),
-                request_id,
+                Some(request_id),
                 "Attempting to issue a new csrf_token",
             ))
         } else {

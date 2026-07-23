@@ -1,8 +1,8 @@
-use hmac::{Hmac, KeyInit, Mac, digest::Key};
+use hmac::{Hmac, KeyInit, Mac};
 use rand::Rng;
 use sha2::Sha256;
 
-pub type HmacKey = Key<Hmac<Sha256>>;
+pub type HmacKey = [u8; 32];
 
 /// A random token
 pub struct Token {
@@ -26,9 +26,20 @@ impl Token {
 
     /// Returns the token's HMAC as hex on a `String`, given the HMAC key
     pub fn hmac(&self, key: &HmacKey) -> String {
-        let mut mac = Hmac::<Sha256>::new(key);
+        let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("hmac dependency broke");
         mac.update(&self.token);
         hex::encode(mac.finalize().into_bytes())
+    }
+
+    /// Verifies if the given HMAC matches the token, given the HMAC key
+    pub fn verify(&self, hmac: &str, key: &HmacKey) -> bool {
+        let Ok(hmac) = hex::decode(hmac) else {
+            return false;
+        };
+
+        let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("hmac dependency broke");
+        mac.update(&self.token);
+        mac.verify_slice(&hmac[..]).is_ok()
     }
 }
 

@@ -14,7 +14,11 @@
 
       in {
         devShells.default = pkgs.mkShell {
-          buildInputs = [
+          buildInputs = with pkgs; [
+            pkg-config
+
+            openssl
+
             (rustVersion.override {
               extensions = [ "rust-src" "rust-analyzer" ];
             })
