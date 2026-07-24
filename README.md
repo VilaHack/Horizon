@@ -18,6 +18,7 @@ You can find a configuration file example in the [examples directory](https://gi
 - [ ] Applications
   - [ ] Application submission
   - [ ] Application review
+  - [ ] Application acceptance email
 - [ ] Attendance
   - [ ] Check-in
   - [ ] Activity participation and bingo

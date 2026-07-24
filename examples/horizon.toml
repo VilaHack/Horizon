@@ -18,6 +18,7 @@ key = [
   84, 75, 240, 186, 31, 133, 254, 240, 131, 113, 48, 113, 143, 10, 161, 154,
   159, 198, 80, 114, 150, 145, 51, 250, 105, 105, 134, 89, 25, 176, 131, 184
 ]
+session_timeout_ms = 28800000 # 8 hours
 
 [http]
 bind_address = "0.0.0.0:8000" # Listen on all network interfaces on port 8000
@@ -45,7 +46,12 @@ verification = {
     body = "verification_email.liquid.html" # File path to email liquid template
 }                                           #  
                                             # The variable `url` is used for
-forgot_password = {                         # both templates.
-    subject = "[My CTF] Password reset",
+forgot_password = {                         # the verification and password
+    subject = "[My CTF] Password reset",    # reset templates.
     body = "forgotten_password_email.liquid.html"
 }
+
+application_acceptance = {
+    subject = "[My CTF] You've been accepted! Please confirm your attendance",
+    body = "application_accepted.liquid.html" # The variable `name` is
+}                                             # available.

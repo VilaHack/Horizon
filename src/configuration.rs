@@ -36,6 +36,8 @@ mod headervalues {
 pub struct Authentication {
     /// Secret key used for the HMAC algorithm
     pub key: HmacKey,
+    /// How long in ms it takes for a session to be considered stale
+    pub session_timeout_ms: i64,
 }
 
 #[derive(Deserialize, Debug)]
@@ -68,6 +70,8 @@ pub struct EmailTemplates {
     pub verification: EmailTemplate,
     /// Forgotten password reset message template
     pub forgot_password: EmailTemplate,
+    /// Application acceptance message template
+    pub application_acceptance: EmailTemplate,
 }
 
 #[derive(Deserialize, Debug)]

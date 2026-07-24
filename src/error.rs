@@ -20,6 +20,10 @@ pub struct Error {
 
 impl Error {
     /// Create source error
+    ///
+    /// Try to not leak information through the error kind or message. The message should be
+    /// something that is safe for anyone to know. Information can instead be gathered for debugging
+    /// prom the source error and the context.
     pub fn new(
         kind: ErrorKind,
         message: String,
@@ -74,6 +78,33 @@ impl Error {
     }
 }
 
+/// Add context to an error
+///
+/// Context should always be concerning the exact operation and not the function it happens in. This
+/// is to avoid duplicate context, since callers should be the ones adding that context.
+///
+/// ### For example:
+/// Do:
+/// ```ignore
+/// [
+///     "Performing a MongoDB database operation",
+///     "Finding out which user a token belongs to",
+///     "Deleting all sessions",
+///     "Fulfilling HTTP request"
+/// ]
+/// ```
+///
+/// Don't:
+/// ```ignore
+/// [
+///     "Performing a MongoDB database operation",
+///     "Trying to find which user a token belongs to, so all sessions can be deleted",
+///     "Trying to delete all sessions to fulfill a POST request",
+///     "Trying to fulfill HTTP request"
+/// ]
+/// ```
+///
+/// Also avoid "Trying to", "Attempting to" and similar phrasings. You can word it more directly.
 pub trait Context<T> {
     /// Convert to Horizon's error type if it isn's already and add context if the result is an `Error`
     ///
@@ -135,7 +166,9 @@ pub enum ErrorKind {
 }
 
 impl IntoResponse for Error {
-    fn into_response(self) -> Response {
+    fn into_response(mut self) -> Response {
+        self.context.push("Fulfilling an HTTP request");
+
         let http_code = match self.kind {
             ErrorKind::InvalidCredentials | ErrorKind::SessionNotFound => StatusCode::UNAUTHORIZED,
 
@@ -155,7 +188,7 @@ impl From<mongodb::error::Error> for Error {
             kind: ErrorKind::Unexpected,
             message: "Something unexpected happened".into(),
             request_id: None,
-            context: vec!["MongoDB database operation"],
+            context: vec!["Performing a MongoDB database operation"],
             source: Some(anyhow::Error::new(value)),
         }
     }
@@ -167,7 +200,19 @@ impl From<std::io::Error> for Error {
             kind: ErrorKind::Unexpected,
             message: "Something unexpected happened".into(),
             request_id: None,
-            context: vec!["IO operation"],
+            context: vec!["Performing an IO operation"],
+            source: Some(anyhow::Error::new(value)),
+        }
+    }
+}
+
+impl From<hex::FromHexError> for Error {
+    fn from(value: hex::FromHexError) -> Self {
+        Self {
+            kind: ErrorKind::Unexpected,
+            message: "Something unexpected happened".into(),
+            request_id: None,
+            context: vec!["Decoding from hex"],
             source: Some(anyhow::Error::new(value)),
         }
     }
