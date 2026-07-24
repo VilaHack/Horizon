@@ -1,4 +1,4 @@
 mod session;
 mod token;
 
-pub use token::HmacKey;
+pub use session::{Event, Puzzle, Scan, ScopedSession, Session};

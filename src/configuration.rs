@@ -10,10 +10,7 @@ use mongodb::options::ConnectionString;
 
 use serde::Deserialize;
 
-use crate::{
-    authentication::HmacKey,
-    error::{Context, Error, ErrorKind},
-};
+use crate::error::{Context, Error, ErrorKind};
 
 mod headervalues {
     use axum::http::HeaderValue;
@@ -35,7 +32,7 @@ mod headervalues {
 #[derive(Deserialize, Debug)]
 pub struct Authentication {
     /// Secret key used for the HMAC algorithm
-    pub key: HmacKey,
+    pub key: [u8; 32],
     /// How long in ms it takes for a session to be considered stale
     pub session_timeout_ms: i64,
 }
@@ -88,21 +85,70 @@ pub struct Email {
     pub templates: EmailTemplates,
 }
 
-/// Horizon's configuration
 #[derive(Deserialize, Debug)]
-pub struct Config {
+pub struct Telemetry {
     /// Set of log filters in the `log` crate's filter format
-    pub log_level: String,
-
-    pub authentication: Authentication,
-    pub http: Http,
-    #[allow(clippy::doc_markdown)]
-    /// MongoDB client configuration
-    pub database: Database,
-    pub smtp: Email,
+    pub filter: String,
+    pub otlp_endpoint: String,
+    /// Service name that will be reported to opentelemetry.
+    ///
+    /// This is useful if you have several deployments pushing logs to the same opentelemetry
+    /// collector; for example if you have a staging backend and a production one.
+    pub service_name: String,
 }
 
-impl Config {
+/// Horizon's configuration
+#[derive(Deserialize, Debug)]
+pub struct Configuration {
+    pub authentication: Authentication,
+    pub http: Http,
+    pub database: Database,
+    pub smtp: Email,
+    pub telemetry: Telemetry,
+}
+
+impl Configuration {
+    // using `eprintln` instead of loging because logging isn't active yet when this runs
+    pub fn from_default_locations() -> Result<Self, Error> {
+        let mut paths: Vec<PathBuf> = vec![
+            "/etc/horizon/horizon.toml".into(),
+            "/etc/horizon/configuration.toml".into(),
+            "/etc/horizon/config.toml".into(),
+        ];
+
+        if let Some(path) = std::env::args().nth(1) {
+            paths.insert(0, path.into());
+        }
+
+        let mut configuration = None;
+
+        for path in paths {
+            match Self::read_from_path(&path) {
+                Ok(config) => {
+                    eprintln!("Successfully read config from {}", path.display());
+                    configuration = Some(config);
+                    break;
+                }
+                Err(err) => {
+                    eprintln!("Could not read config from {}: {err:#?}", path.display());
+                }
+            }
+        }
+
+        configuration.map_or_else(
+            || {
+                eprintln!("Configuration could not be built from default paths");
+                Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "Could not get build configuration from default paths".into(),
+                    None,
+                    "Building configuration none of the default paths contain a valid file",
+                ))
+            },
+            Ok,
+        )
+    }
+
     /// Reads the configuration given a path to the config file
     ///
     /// # Errors

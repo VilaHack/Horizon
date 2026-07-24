@@ -1,16 +1,16 @@
 # Example configuation file for Horizon
 #
 # Horizon will look for a configuration file at these default locations:
+# - /etc/horizon/horizon.toml
 # - /etc/horizon/configuration.toml
 # - /etc/horizon/config.toml
-# - /etc/horizon/horizon.toml
+# (ordered by priority)
 #
 # You can use an alterative configuration path by providing it as the first
 # argument when running Horizon.
-
-log_level = "info,horizon=trace" # Emmit all logs for Horizon and only logs of
-                                 # `info` level or higher for Horizon's
-                                 # dependencies
+#
+# If serialization fails, the next path by priority on the default set will
+# be attempted.
 
 [authentication]
 # Random set of 32 bytes, used as the HMAC key.
@@ -27,7 +27,7 @@ allowed_origins = [
   "https://admin.my_ctf.com"  # responses as allowed origins (CORS)
 ]
 
-[database] # MongoDB connection string
+[database] # MongoDB connection string. It is mandatory to specify a database.
 uri = "mongodb://horizon_db_user:super_secure_password@localhost:27017/my_ctf_db?appName=Horizon"
 
 [smtp]
@@ -55,3 +55,10 @@ application_acceptance = {
     subject = "[My CTF] You've been accepted! Please confirm your attendance",
     body = "application_accepted.liquid.html" # The variable `name` is
 }                                             # available.
+
+[telemetry]
+service_name = "horizon_production"     # Name that will be used to identify the
+otlp_endpoint = "http://127.0.0.1:4317" # service on otlp 
+filter = "info,horizon=trace" # Emmit all logs for Horizon and only logs of
+                              # `info` level or higher for Horizon's
+                              # dependencies

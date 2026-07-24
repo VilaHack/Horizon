@@ -13,8 +13,8 @@ You can find a configuration file example in the [examples directory](https://gi
 - [ ] Authentication
   - [ ] Sign up and log in
   - [ ] Email verification and password reset
-  - [ ] Session based authentication
-  - [ ] Access scopes
+  - [X] Session based authentication
+  - [X] Access scopes
 - [ ] Applications
   - [ ] Application submission
   - [ ] Application review
@@ -37,4 +37,4 @@ You can find a configuration file example in the [examples directory](https://gi
   - [ ] Realtime global evolution stats
 - [ ] Telemetry
   - [ ] Usage analytics
-  - [ ] Logging
+  - [X] Logging

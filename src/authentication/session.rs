@@ -158,7 +158,7 @@ impl Session {
         request_id: Uuid,
     ) -> Result<Self, Error> {
         let now = DateTime::now();
-        let fresh_before = now.saturating_add_millis(-auth_config.session_timeout_ms);
+        let fresh_before = now.saturating_add_millis(-(auth_config.session_timeout_ms.abs()));
 
         let Some(session) = database
             .collection::<Self>("sessions")
