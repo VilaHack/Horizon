@@ -6,6 +6,33 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+/// All the possible errors that can be returned by Horizon
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorKind {
+    // Authentication
+    /// When logging in, the credentials do not evaluate to any user's account
+    InvalidCredentials,
+    /// When attempting to do any authenticated operation, the caller did not provide the session
+    /// cookie
+    SessionCookieMissing,
+    /// When attempting to do any authenticated operation, the caller did not provide the anti-CSRF
+    /// token header
+    CsrfHeaderMissing,
+    /// When attempting to do any authenticated operation, the provided session was not found
+    SessionNotFound,
+    /// When attempting to do a scoped authenticated operation and the caller does not have access
+    /// to that scope
+    InsufficientPermissions,
+
+    // General
+    /// Something unexpected happened. See the message and the source for more information
+    #[default]
+    Unexpected,
+}
+
 /// Error type used by Horizon
 #[derive(Debug, serde::Serialize)]
 pub struct Error {
@@ -85,7 +112,7 @@ impl Error {
 ///
 /// ### For example:
 /// Do:
-/// ```ignore
+/// ```ignore, rust
 /// [
 ///     "Performing a MongoDB database operation",
 ///     "Finding out which user a token belongs to",
@@ -95,7 +122,7 @@ impl Error {
 /// ```
 ///
 /// Don't:
-/// ```ignore
+/// ```ignore, rust
 /// [
 ///     "Performing a MongoDB database operation",
 ///     "Trying to find which user a token belongs to, so all sessions can be deleted",
@@ -147,30 +174,23 @@ where
     }
 }
 
-/// All the possible errors that can be returned by Horizon
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum ErrorKind {
-    // Authentication
-    /// When logging in, the credentials do not evaluate to any user's account
-    InvalidCredentials,
-    /// When attempting to do any authenticated operation, the provided session was not found
-    SessionNotFound,
-
-    // General
-    /// Something unexpected happened. See the message and the source for more information
-    #[default]
-    Unexpected,
-}
-
 impl IntoResponse for Error {
     fn into_response(mut self) -> Response {
         self.context.push("Fulfilling an HTTP request");
 
         let http_code = match self.kind {
-            ErrorKind::InvalidCredentials | ErrorKind::SessionNotFound => StatusCode::UNAUTHORIZED,
+            ErrorKind::InvalidCredentials
+            | ErrorKind::SessionNotFound
+            | ErrorKind::SessionCookieMissing
+            | ErrorKind::CsrfHeaderMissing => {
+                log::trace!("{self:#?}");
+                StatusCode::UNAUTHORIZED
+            }
+
+            ErrorKind::InsufficientPermissions => {
+                log::trace!("{self:#?}");
+                StatusCode::FORBIDDEN
+            }
 
             ErrorKind::Unexpected => {
                 log::warn!("{self:#?}");

@@ -20,6 +20,7 @@ tokio = { version = "1", features = ["macros"] }
 
 # HTTP server
 axum = { version = "0.8", features = ["multipart"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
 
 # Database
 mongodb = { version = "3", features = ["snappy-compression"] }

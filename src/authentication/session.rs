@@ -1,9 +1,14 @@
+use std::sync::Arc;
+
+use axum::{extract::FromRequestParts, http::request::Parts};
+use axum_extra::extract::{CookieJar, cookie::Cookie};
 use mongodb::{
     Database,
     bson::{DateTime, Uuid, doc},
 };
 
 use crate::{
+    State,
     authentication::token::{HmacKey, Token},
     configuration::Authentication,
     error::{Context, Error, ErrorKind},
@@ -30,6 +35,53 @@ pub struct Session {
     user: Uuid,
     team: Option<Uuid>,
     scopes: Vec<Scope>,
+}
+
+trait RequiredScope {
+    const SCOPE: Scope;
+}
+
+/// See `ScopedSession`
+pub struct Scan;
+impl RequiredScope for Scan {
+    const SCOPE: Scope = Scope::Scan;
+}
+
+/// See `ScopedSession`
+pub struct Event;
+impl RequiredScope for Event {
+    const SCOPE: Scope = Scope::Event;
+}
+
+/// See `ScopedSession`
+pub struct Puzzle;
+impl RequiredScope for Puzzle {
+    const SCOPE: Scope = Scope::Puzzle;
+}
+
+/// Helper struct for allwing you to easily scope-guard endpoints
+///
+/// For example:
+/// ```ignore, rust
+/// pub async fn check_in(
+///     session: ScopedSession<Scan>,
+///     Query(attendee_id): Query(Id),
+///     State(state): State<Arc<Bstate>>,
+/// ) -> Result<Json<CheckinResponse>, Error> {
+///     // ...
+/// }
+/// ```
+pub struct ScopedSession<S> {
+    session: Session,
+    _marker: std::marker::PhantomData<S>,
+}
+
+impl<S> std::ops::Deref for ScopedSession<S> {
+    type Target = Session;
+
+    fn deref(&self) -> &Session {
+        &self.session
+    }
 }
 
 /// Projection of user used only for building sessions
@@ -60,7 +112,7 @@ impl Session {
         let user_projection: Option<User> = database
             .collection("users")
             .find_one(doc! { "_id": user })
-            .projection(doc! {"team": 1, "scopes": 1})
+            .projection(doc! { "auth.team": 1, "auth.scopes": 1 })
             .await
             .root_context("Getting a user's team and scopes", request_id)?;
 
@@ -91,7 +143,8 @@ impl Session {
         Ok(token.hex())
     }
 
-    /// Given a session token, get the associated session, updating the `last_seen_at` timestamp
+    /// Given a session token and it's csrf token, get the associated session,
+    /// updating the `last_seen_at` timestamp
     ///
     /// # Errors
     /// Will return an error if the given session token doesn't belong to any active sessions
@@ -99,24 +152,23 @@ impl Session {
     /// May return an error if there's an issue communicating with the database
     pub async fn get(
         session_token: Token,
-        key: &HmacKey,
+        csrf_token: Token,
         auth_config: &Authentication,
         database: &Database,
         request_id: Uuid,
     ) -> Result<Self, Error> {
-        let token = session_token.hmac(key);
-
         let now = DateTime::now();
         let fresh_before = now.saturating_add_millis(-auth_config.session_timeout_ms);
 
         let Some(session) = database
             .collection::<Self>("sessions")
             .find_one_and_update(
-                doc! {                                        // While MongoDB has more accurate time
-                    "_id": token,                             // here, doing it like this lets us
-                    "last_seen_at": { "$gte": fresh_before }, // take advantage of indexes better
-                },
-                doc! { "$set": { "last_seen_at": now } },
+                doc! {
+                    "_id": session_token.hmac(&auth_config.key),
+                    "csrf_token_hmac": csrf_token.hmac(&auth_config.key),
+                    "last_seen_at": { "$gte": fresh_before }, // While MongoDB has more accurate time
+                }, // take advantage of indexes better
+                doc! { "$set": { "last_seen_at": now } }, // here, doing it like this lets us
             )
             .await
             .root_context("Getting and updating a session", request_id)?
@@ -226,5 +278,94 @@ impl Session {
                 "Deleting zero sessions",
             ))
         }
+    }
+}
+
+impl FromRequestParts<Arc<State>> for Session {
+    type Rejection = Error;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<State>,
+    ) -> Result<Self, Self::Rejection> {
+        let request_id = Uuid::new();
+
+        let jar = CookieJar::from_request_parts(parts, state)
+            .await
+            .expect("CookieJar::from_request_parts is `Infallible`");
+
+        let Some(session_cookie) = jar.get("horizon_session").map(Cookie::value) else {
+            return Err(Error::new(
+                ErrorKind::SessionCookieMissing,
+                "A session cookie was not provided for an operation requiring authentication"
+                    .into(),
+                Some(request_id),
+                "Retrieving the session cookie from the cookie jar",
+            ));
+        };
+
+        let session_token =
+            Token::try_from(session_cookie).context("Building a token from the session cookie")?;
+
+        let Some(csrf_token) = parts.headers.get("X-CSRF-Token") else {
+            return Err(Error::new(
+                ErrorKind::CsrfHeaderMissing,
+                "An anti-CSRF token was not provided for an operation requiring authentication"
+                    .into(),
+                Some(request_id),
+                "Retrieving the CSRF header from the header map",
+            ));
+        };
+
+        let csrf_token = csrf_token.to_str().map_err(|err| {
+            Error::new_with_source(
+                ErrorKind::Unexpected,
+                "Something unexpected happened while trying to authenticate the caller".into(),
+                Some(request_id),
+                "Converting a header value to a &str",
+                anyhow::Error::new(err),
+            )
+        })?;
+
+        let csrf_token =
+            Token::try_from(csrf_token).context("Building a token from the CSRF header value")?;
+
+        Self::get(
+            session_token,
+            csrf_token,
+            &state.configuration.authentication,
+            &state.database,
+            request_id,
+        )
+        .await
+        .context("Getting a session")
+    }
+}
+
+impl<S> FromRequestParts<Arc<State>> for ScopedSession<S>
+where
+    S: RequiredScope,
+{
+    type Rejection = Error;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<State>,
+    ) -> Result<Self, Self::Rejection> {
+        let session = Session::from_request_parts(parts, state).await?;
+
+        if !session.scopes.contains(&S::SCOPE) {
+            return Err(Error::new(
+                ErrorKind::InsufficientPermissions,
+                "The caller doesn't have sufficient permissions to do this operation".into(),
+                None,
+                "Verifying scope",
+            ));
+        }
+
+        Ok(Self {
+            session,
+            _marker: std::marker::PhantomData,
+        })
     }
 }

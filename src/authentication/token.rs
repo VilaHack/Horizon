@@ -43,10 +43,10 @@ impl Token {
     }
 }
 
-impl TryFrom<&String> for Token {
+impl TryFrom<&str> for Token {
     type Error = hex::FromHexError;
 
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         let mut token = Self { token: [0; 32] };
 
         hex::decode_to_slice(value, &mut token.token)?;
