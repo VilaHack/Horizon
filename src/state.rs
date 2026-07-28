@@ -47,13 +47,14 @@ impl State {
             .context("Getting configuration from default locations")?;
 
         initialize_logging(&configuration.observability).context("Initializing logging")?;
-        eprintln!("Switching to logging over opentelemetry.");
 
         initialize_metrics(&configuration.observability);
 
         let database = initialize_database(&configuration)
             .await
             .context("Initializing database")?;
+
+        log::trace!("State initialized.");
 
         Ok(Self {
             configuration,
@@ -63,6 +64,9 @@ impl State {
 }
 
 fn initialize_logging(configuration: &Observability) -> Result<(), Error> {
+    // Filtering is done by logforth.
+    log::set_max_level(log::LevelFilter::Trace);
+
     let filter = RustLogFilterBuilder::try_from_spec(&configuration.filter)
         .map_err(|err| {
             Error::new_with_source(
@@ -112,6 +116,8 @@ fn initialize_logging(configuration: &Observability) -> Result<(), Error> {
         };
 
         builder = builder.dispatch(|b| b.filter(filter).append(appender));
+
+        eprintln!("Switching to logging over opentelemetry.");
     }
 
     if configuration.stderr {
@@ -123,7 +129,11 @@ fn initialize_logging(configuration: &Observability) -> Result<(), Error> {
 
     _ = log::set_boxed_logger(Box::new(LogBridge::new(builder.build())));
 
-    log::trace!("Horizon is starting. Now emitting logs over otlp.");
+    log::trace!(
+        "Initialized logging. Using opentelemetry: {}, using stderr: {}",
+        configuration.opentelemetry.is_some(),
+        configuration.stderr
+    );
 
     Ok(())
 }
@@ -152,6 +162,10 @@ fn initialize_metrics(configuration: &Observability) {
         _ = metrics::set_global_recorder(recorder);
 
         // TODO: Describe counters
+
+        log::trace!("Initialized metrics.");
+    } else {
+        log::trace!("Skipped initializing metrics. Opentelemetry is not configured.");
     }
 }
 
@@ -211,6 +225,8 @@ async fn initialize_database(configuration: &Configuration) -> Result<mongodb::D
         .create_indexes(indexes)
         .await
         .context("Creating session indexes")?;
+
+    log::trace!("Connected to database.");
 
     Ok(database)
 }

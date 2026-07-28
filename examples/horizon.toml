@@ -63,8 +63,8 @@ filter = "info,horizon=trace" # Emmit all logs for Horizon and only logs of
                               # dependencies
 
 opentelemetry = { # Optional. Disabled if not defined
-    service_name = "horizon_production" # Name that will be used to identify
-    endpoint = "http://127.0.0.1:4317"  # the service on otlp 
+    service_name = "horizon_production", # Name that will be used to identify
+    endpoint = "http://127.0.0.1:4317"   # the service on otlp 
 }
 
 # Optional. Disabled if not defined

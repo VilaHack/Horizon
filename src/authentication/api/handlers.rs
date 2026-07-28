@@ -35,7 +35,7 @@ use crate::{
             body = [Error],
             example = json!({
                 "kind": "bad_request",
-                "message": "Failed to deserialize the JSON body into the target type: was given 'a' at line 1 column 1",
+                "message": "Failed to deserialize the JSON body into the target type: missing field `email` at line 1 column 85",
                 "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
             })
         ),
@@ -61,7 +61,6 @@ use crate::{
         )
     )
 )]
-#[axum::debug_handler]
 pub async fn login(
     jar: CookieJar,
     state: State<Arc<Horizon>>,
