@@ -19,13 +19,14 @@ repository = "https://github.com/VilaHack/Horizon"
 tokio = { version = "1", features = ["macros"] }
 
 # HTTP server
-axum = { version = "0.8", features = ["multipart"] }
+axum = { version = "0.8", features = ["multipart", "macros"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
 
 # Database
 mongodb = { version = "3", features = ["snappy-compression"] }
 
 # Authentication
+argon2 = "0.5.3"
 hex = "0.4"
 hmac = "0.13"
 rand = { version = "0.10", features = ["thread_rng"] }
@@ -50,6 +51,7 @@ opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
 
 # Other
 anyhow = "1"
+utoipa = { version = "5", features = ["axum_extras", "uuid"] }
 
 [profile.release]
 lto = 'fat' # Perform link time optimizations for the whole dependency graph

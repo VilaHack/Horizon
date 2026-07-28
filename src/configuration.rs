@@ -35,6 +35,8 @@ pub struct Authentication {
     pub key: [u8; 32],
     /// How long in ms it takes for a session to be considered stale
     pub session_timeout_ms: i64,
+    /// Domain the session cookie will be configured for
+    pub domain: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -148,7 +150,6 @@ impl Configuration {
                 Err(Error::new(
                     ErrorKind::Unexpected,
                     "Could not get build configuration from default paths".into(),
-                    None,
                     "Building configuration none of the default paths contain a valid file",
                 ))
             },
@@ -168,7 +169,6 @@ impl Configuration {
             Error::new_with_source(
                 ErrorKind::Unexpected,
                 "Something unexpected happened".into(),
-                None,
                 "Trying to parse configuration file",
                 anyhow::Error::new(err),
             )

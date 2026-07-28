@@ -9,7 +9,7 @@ use mongodb::{
 
 use crate::{
     State,
-    authentication::token::{HmacKey, Token},
+    authentication::model::token::{HmacKey, Token},
     configuration::Authentication,
     error::{Context, Error, ErrorKind},
 };
@@ -37,53 +37,6 @@ pub struct Session {
     scopes: Vec<Scope>,
 }
 
-trait RequiredScope {
-    const SCOPE: Scope;
-}
-
-/// See `ScopedSession`
-pub struct Scan;
-impl RequiredScope for Scan {
-    const SCOPE: Scope = Scope::Scan;
-}
-
-/// See `ScopedSession`
-pub struct Event;
-impl RequiredScope for Event {
-    const SCOPE: Scope = Scope::Event;
-}
-
-/// See `ScopedSession`
-pub struct Puzzle;
-impl RequiredScope for Puzzle {
-    const SCOPE: Scope = Scope::Puzzle;
-}
-
-/// Helper struct for allwing you to easily scope-guard endpoints
-///
-/// For example:
-/// ```ignore, rust
-/// pub async fn check_in(
-///     session: ScopedSession<Scan>,
-///     Query(attendee_id): Query(Id),
-///     State(state): State<Arc<Bstate>>,
-/// ) -> Result<Json<CheckinResponse>, Error> {
-///     // ...
-/// }
-/// ```
-pub struct ScopedSession<S> {
-    session: Session,
-    _marker: std::marker::PhantomData<S>,
-}
-
-impl<S> std::ops::Deref for ScopedSession<S> {
-    type Target = Session;
-
-    fn deref(&self) -> &Session {
-        &self.session
-    }
-}
-
 /// Projection of user used only for building sessions
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct User {
@@ -101,26 +54,20 @@ impl Session {
     ///
     /// Will return an error if the `user` doesn't exist
     #[allow(clippy::new_ret_no_self)]
-    pub async fn new(
-        user: Uuid,
-        key: &HmacKey,
-        database: &Database,
-        request_id: Uuid,
-    ) -> Result<String, Error> {
+    pub async fn new(user: Uuid, key: &HmacKey, database: &Database) -> Result<String, Error> {
         let token = Token::new();
 
         let user_projection: Option<User> = database
             .collection("users")
             .find_one(doc! { "_id": user })
-            .projection(doc! { "auth.team": 1, "auth.scopes": 1 })
+            .projection(doc! { "team": 1, "auth.scopes": 1 })
             .await
-            .root_context("Getting a user's team and scopes", request_id)?;
+            .context("Getting a user's team and scopes")?;
 
         let Some(User { team, scopes }) = user_projection else {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "Something unexpected happened while trying to create a new session".into(),
-                Some(request_id),
                 "Creating a new session, the passed user doesn't exist",
             ));
         };
@@ -138,7 +85,7 @@ impl Session {
             .collection("sessions")
             .insert_one(session)
             .await
-            .root_context("Inserting a new session", request_id)?;
+            .context("Inserting a new session")?;
 
         Ok(token.hex())
     }
@@ -155,7 +102,6 @@ impl Session {
         csrf_token: Token,
         auth_config: &Authentication,
         database: &Database,
-        request_id: Uuid,
     ) -> Result<Self, Error> {
         let now = DateTime::now();
         let fresh_before = now.saturating_add_millis(-(auth_config.session_timeout_ms.abs()));
@@ -171,12 +117,11 @@ impl Session {
                 doc! { "$set": { "last_seen_at": now } }, // here, doing it like this lets us
             )
             .await
-            .root_context("Getting and updating a session", request_id)?
+            .context("Getting and updating a session")?
         else {
             return Err(Error::new(
                 ErrorKind::SessionNotFound,
                 "No valid session found for the provided token".into(),
-                Some(request_id),
                 "Getting and updating a session that doesn't exist",
             ));
         };
@@ -193,12 +138,7 @@ impl Session {
     /// never happen, as it would be caused by a TOCTOU scenario.
     ///
     /// May return an error if there's an issue communicating with the database.
-    pub async fn new_csrf_token(
-        &self,
-        key: &HmacKey,
-        database: &Database,
-        request_id: Uuid,
-    ) -> Result<Token, Error> {
+    pub async fn new_csrf_token(&self, key: &HmacKey, database: &Database) -> Result<Token, Error> {
         let csrf_token = Token::new();
 
         let session: Option<String> = database
@@ -209,13 +149,12 @@ impl Session {
             )
             .projection(doc! {"_id": 1})
             .await
-            .root_context("Adding a new anti-CSRF token to a session", request_id)?;
+            .context("Adding a new anti-CSRF token to a session")?;
 
         if session.is_none() {
             Err(Error::new(
                 ErrorKind::Unexpected,
                 "Something unexpected happened while trying to issue a CSRF token".into(),
-                Some(request_id),
                 "Adding a new anti-CSRF token to a session that doesn't exist",
             ))
         } else {
@@ -232,19 +171,18 @@ impl Session {
     /// never happen, as it would be caused by a TOCTOU scenario.
     ///
     /// May return an error if there's an issue communicating with the database
-    pub async fn delete(&self, database: &Database, request_id: Uuid) -> Result<(), Error> {
+    pub async fn delete(&self, database: &Database) -> Result<(), Error> {
         let session: Option<String> = database
             .collection("sessions")
             .find_one_and_delete(doc! { "_id": &self._id })
             .projection(doc! {"_id": 1})
             .await
-            .root_context("Deleting a session", request_id)?;
+            .context("Deleting a session")?;
 
         if session.is_none() {
             Err(Error::new(
                 ErrorKind::Unexpected,
                 "Something unexpected happened while trying to delete a session".into(),
-                Some(request_id),
                 "Deleting a session that doesn't exist",
             ))
         } else {
@@ -261,12 +199,12 @@ impl Session {
     /// exist. This should practically never happen, as it would be caused by a TOCTOU scenario.
     ///
     /// May return an error if there's an issue communicating with the database
-    pub async fn delete_all(&self, database: &Database, request_id: Uuid) -> Result<(), Error> {
+    pub async fn delete_all(&self, database: &Database) -> Result<(), Error> {
         let result = database
             .collection::<Self>("sessions")
             .delete_many(doc! { "user": &self.user })
             .await
-            .root_context("", request_id)?;
+            .context("Deleting all user sessions for a user")?;
 
         if result.deleted_count > 0 {
             Ok(())
@@ -274,7 +212,6 @@ impl Session {
             Err(Error::new(
                 ErrorKind::SessionNotFound,
                 "Something unexpected happened while trying to delete sessions".into(),
-                Some(request_id),
                 "Deleting zero sessions",
             ))
         }
@@ -288,8 +225,6 @@ impl FromRequestParts<Arc<State>> for Session {
         parts: &mut Parts,
         state: &Arc<State>,
     ) -> Result<Self, Self::Rejection> {
-        let request_id = Uuid::new();
-
         let jar = CookieJar::from_request_parts(parts, state)
             .await
             .expect("CookieJar::from_request_parts is `Infallible`");
@@ -299,7 +234,6 @@ impl FromRequestParts<Arc<State>> for Session {
                 ErrorKind::SessionCookieMissing,
                 "A session cookie was not provided for an operation requiring authentication"
                     .into(),
-                Some(request_id),
                 "Retrieving the session cookie from the cookie jar",
             ));
         };
@@ -312,7 +246,6 @@ impl FromRequestParts<Arc<State>> for Session {
                 ErrorKind::CsrfHeaderMissing,
                 "An anti-CSRF token was not provided for an operation requiring authentication"
                     .into(),
-                Some(request_id),
                 "Retrieving the CSRF header from the header map",
             ));
         };
@@ -321,7 +254,6 @@ impl FromRequestParts<Arc<State>> for Session {
             Error::new_with_source(
                 ErrorKind::Unexpected,
                 "Something unexpected happened while trying to authenticate the caller".into(),
-                Some(request_id),
                 "Converting a header value to a &str",
                 anyhow::Error::new(err),
             )
@@ -335,37 +267,94 @@ impl FromRequestParts<Arc<State>> for Session {
             csrf_token,
             &state.configuration.authentication,
             &state.database,
-            request_id,
         )
         .await
         .context("Getting a session")
     }
 }
 
-impl<S> FromRequestParts<Arc<State>> for ScopedSession<S>
-where
-    S: RequiredScope,
-{
-    type Rejection = Error;
+pub mod scoped {
+    use std::sync::Arc;
 
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &Arc<State>,
-    ) -> Result<Self, Self::Rejection> {
-        let session = Session::from_request_parts(parts, state).await?;
+    use axum::{extract::FromRequestParts, http::request::Parts};
 
-        if !session.scopes.contains(&S::SCOPE) {
-            return Err(Error::new(
-                ErrorKind::InsufficientPermissions,
-                "The caller doesn't have sufficient permissions to do this operation".into(),
-                None,
-                "Verifying scope",
-            ));
+    use crate::{
+        State,
+        authentication::{Scope, Session},
+        error::{Error, ErrorKind},
+    };
+
+    pub trait RequiredScope {
+        const SCOPE: Scope;
+    }
+
+    /// See `ScopedSession`
+    pub struct Scan;
+    impl RequiredScope for Scan {
+        const SCOPE: Scope = Scope::Scan;
+    }
+
+    /// See `ScopedSession`
+    pub struct Event;
+    impl RequiredScope for Event {
+        const SCOPE: Scope = Scope::Event;
+    }
+
+    /// See `ScopedSession`
+    pub struct Puzzle;
+    impl RequiredScope for Puzzle {
+        const SCOPE: Scope = Scope::Puzzle;
+    }
+
+    /// Helper struct for allwing you to easily scope-guard endpoints
+    ///
+    /// For example:
+    /// ```ignore, rust
+    /// pub async fn check_in(
+    ///     session: ScopedSession<Scan>,
+    ///     Query(attendee_id): Query(Id),
+    ///     State(state): State<Arc<Bstate>>,
+    /// ) -> Result<Json<CheckinResponse>, Error> {
+    ///     // ...
+    /// }
+    /// ```
+    pub struct ScopedSession<S> {
+        session: Session,
+        _marker: std::marker::PhantomData<S>,
+    }
+
+    impl<S> std::ops::Deref for ScopedSession<S> {
+        type Target = Session;
+
+        fn deref(&self) -> &Session {
+            &self.session
         }
+    }
 
-        Ok(Self {
-            session,
-            _marker: std::marker::PhantomData,
-        })
+    impl<S> FromRequestParts<Arc<State>> for ScopedSession<S>
+    where
+        S: RequiredScope,
+    {
+        type Rejection = Error;
+
+        async fn from_request_parts(
+            parts: &mut Parts,
+            state: &Arc<State>,
+        ) -> Result<Self, Self::Rejection> {
+            let session = Session::from_request_parts(parts, state).await?;
+
+            if !session.scopes.contains(&S::SCOPE) {
+                return Err(Error::new(
+                    ErrorKind::InsufficientPermissions,
+                    "The caller doesn't have sufficient permissions to do this operation".into(),
+                    "Verifying scope",
+                ));
+            }
+
+            Ok(Self {
+                session,
+                _marker: std::marker::PhantomData,
+            })
+        }
     }
 }

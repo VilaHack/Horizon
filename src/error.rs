@@ -8,7 +8,16 @@ use axum::{
 
 /// All the possible errors that can be returned by Horizon
 #[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    utoipa::ToSchema,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorKind {
@@ -31,10 +40,12 @@ pub enum ErrorKind {
     /// Something unexpected happened. See the message and the source for more information
     #[default]
     Unexpected,
+    /// The caller sent a request without following the required format
+    BadRequest,
 }
 
 /// Error type used by Horizon
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct Error {
     kind: ErrorKind,
     message: String,
@@ -51,18 +62,13 @@ impl Error {
     /// Try to not leak information through the error kind or message. The message should be
     /// something that is safe for anyone to know. Information can instead be gathered for debugging
     /// prom the source error and the context.
-    pub fn new(
-        kind: ErrorKind,
-        message: String,
-        request_id: Option<Uuid>,
-        context: impl Into<&'static str>,
-    ) -> Self {
+    pub fn new(kind: ErrorKind, message: String, context: impl Into<&'static str>) -> Self {
         let context = vec![context.into()];
 
         Self {
             kind,
             message,
-            request_id,
+            request_id: None,
             context,
             source: None,
         }
@@ -77,7 +83,6 @@ impl Error {
     pub fn new_with_source(
         kind: ErrorKind,
         message: String,
-        request_id: Option<Uuid>,
         context: impl Into<&'static str>,
         source: anyhow::Error,
     ) -> Self {
@@ -86,7 +91,7 @@ impl Error {
         Self {
             kind,
             message,
-            request_id,
+            request_id: None,
             context,
             source: Some(source),
         }
@@ -192,6 +197,11 @@ impl IntoResponse for Error {
                 StatusCode::FORBIDDEN
             }
 
+            ErrorKind::BadRequest => {
+                log::debug!("{self:#?}");
+                StatusCode::BAD_REQUEST
+            }
+
             ErrorKind::Unexpected => {
                 log::warn!("{self:#?}");
                 StatusCode::INTERNAL_SERVER_ERROR
@@ -234,6 +244,49 @@ impl From<hex::FromHexError> for Error {
             request_id: None,
             context: vec!["Decoding from hex"],
             source: Some(anyhow::Error::new(value)),
+        }
+    }
+}
+
+impl From<argon2::password_hash::Error> for Error {
+    fn from(value: argon2::password_hash::Error) -> Self {
+        // password_hash::Error does not implement std::error::Error so it can't be put in an anyhow
+        // error
+        let source = Some(anyhow::format_err!(
+            "Error dealing with password hash: {value:?}"
+        ));
+
+        let context = vec!["Dealing with password hashes"];
+
+        match value {
+            argon2::password_hash::Error::Password => Self {
+                kind: ErrorKind::InvalidCredentials,
+                message: "Incorrect email or password".into(),
+                request_id: None,
+                context,
+                source,
+            },
+            _ => Self {
+                kind: ErrorKind::Unexpected,
+                message: "Something unexpected happened".into(),
+                request_id: None,
+                context,
+                source,
+            },
+        }
+    }
+}
+
+impl From<axum::extract::rejection::JsonRejection> for Error {
+    fn from(value: axum::extract::rejection::JsonRejection) -> Self {
+        let source = Some(anyhow::format_err!("{value:?}"));
+
+        Self {
+            kind: ErrorKind::BadRequest,
+            message: value.body_text(),
+            request_id: Some(Uuid::new()),
+            context: vec!["Extracting json from request body"],
+            source,
         }
     }
 }

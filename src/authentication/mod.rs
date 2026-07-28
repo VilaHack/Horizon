@@ -1,4 +1,4 @@
-mod session;
-mod token;
+mod api;
+mod model;
 
-pub use session::{Event, Puzzle, Scan, ScopedSession, Session};
+pub use model::{Scope, Session, scoped};
