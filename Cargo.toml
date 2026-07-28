@@ -5,7 +5,7 @@ keywords = [ "ctf" ]
 
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.91"
 
 license-file = "LICENSE"
 readme = "README.md"
@@ -40,9 +40,13 @@ serde = { version = "1", features = ["serde_derive"] }
 toml = "1"
 
 # Observability
-log = "0.4"
-logforth = { version = "0.29", features = ["append-opentelemetry", "starter-log"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+log = { version = "0.4", features = ["std"] }
+logforth = { version = "0.30", features = ["append-opentelemetry", "layout-text", "filter-rustlog", "bridge-log"] }
+metrics = "0.24"
+metrics-opentelemetry = "0.24032"
+opentelemetry = "0.32"
+opentelemetry_sdk = { version = "0.32", features = ["metrics", "testing"] }
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
 
 # Other
 anyhow = "1"

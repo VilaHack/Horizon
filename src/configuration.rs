@@ -86,15 +86,22 @@ pub struct Email {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Telemetry {
-    /// Set of log filters in the `log` crate's filter format
-    pub filter: String,
-    pub otlp_endpoint: String,
+pub struct OpenTelemetry {
+    pub endpoint: String,
     /// Service name that will be reported to opentelemetry.
     ///
     /// This is useful if you have several deployments pushing logs to the same opentelemetry
     /// collector; for example if you have a staging backend and a production one.
     pub service_name: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Observability {
+    /// Set of log filters in the `log` crate's filter format
+    pub filter: String,
+    pub opentelemetry: Option<OpenTelemetry>,
+    #[serde(default)]
+    pub stderr: bool,
 }
 
 /// Horizon's configuration
@@ -104,7 +111,7 @@ pub struct Configuration {
     pub http: Http,
     pub database: Database,
     pub smtp: Email,
-    pub telemetry: Telemetry,
+    pub observability: Observability,
 }
 
 impl Configuration {

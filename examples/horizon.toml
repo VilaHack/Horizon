@@ -56,9 +56,15 @@ application_acceptance = {
     body = "application_accepted.liquid.html" # The variable `name` is
 }                                             # available.
 
-[telemetry]
-service_name = "horizon_production"     # Name that will be used to identify the
-otlp_endpoint = "http://127.0.0.1:4317" # service on otlp 
+[observability]
 filter = "info,horizon=trace" # Emmit all logs for Horizon and only logs of
                               # `info` level or higher for Horizon's
                               # dependencies
+
+opentelemetry = { # Optional. Disabled if not defined
+    service_name = "horizon_production" # Name that will be used to identify
+    endpoint = "http://127.0.0.1:4317"  # the service on otlp 
+}
+
+# Optional. Disabled if not defined
+# stderr = true

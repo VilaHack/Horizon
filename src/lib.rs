@@ -11,15 +11,23 @@ use mongodb::{
 };
 
 use logforth::{
-    append::opentelemetry::OpentelemetryLogBuilder, filter::env_filter::EnvFilterBuilder,
+    append::{Stderr, opentelemetry::OpentelemetryLogBuilder},
+    bridge::log::LogBridge,
+    filter::rustlog::RustLogFilterBuilder,
+    layout::TextLayout,
 };
+use opentelemetry::{InstrumentationScope, KeyValue};
 use opentelemetry_otlp::{LogExporter, Protocol, WithExportConfig};
+
+use metrics_opentelemetry::opentelemetry::metrics::MeterProvider;
+use metrics_opentelemetry::{OpenTelemetryMetrics, OpenTelemetryRecorder, metrics};
+use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 
 use authentication::Session;
 use configuration::Configuration;
 use error::{Context, Error, ErrorKind};
 
-use crate::configuration::Telemetry;
+use crate::configuration::Observability;
 
 /// Represents Horizon's state
 pub struct State {
@@ -40,8 +48,10 @@ impl State {
         let configuration = Configuration::from_default_locations()
             .context("Getting configuration from default locations")?;
 
-        Self::initialize_logging(&configuration.telemetry).context("Initializing logging")?;
-        eprintln!("Switching to logging over opentelemetry");
+        Self::initialize_logging(&configuration.observability).context("Initializing logging")?;
+        eprintln!("Switching to logging over opentelemetry.");
+
+        Self::initialize_metrics(&configuration.observability);
 
         let database = Self::initialize_database(&configuration)
             .await
@@ -53,39 +63,101 @@ impl State {
         })
     }
 
-    fn initialize_logging(configuration: &Telemetry) -> Result<(), Error> {
-        let Ok(filter_builder) = EnvFilterBuilder::try_from_spec(&configuration.filter) else {
-            todo!()
-        };
-
-        let filter = filter_builder.build();
-
-        let exporter = LogExporter::builder()
-            .with_tonic()
-            .with_endpoint(&configuration.otlp_endpoint)
-            .with_protocol(Protocol::Grpc)
-            .build()
+    fn initialize_logging(configuration: &Observability) -> Result<(), Error> {
+        let filter = RustLogFilterBuilder::try_from_spec(&configuration.filter)
             .map_err(|err| {
                 Error::new_with_source(
                     ErrorKind::Unexpected,
                     "Something unexpected happened".into(),
                     None,
-                    "Building the otlp log exporter",
+                    "Parsing logging filter",
                     anyhow::Error::new(err),
                 )
-            })?;
-
-        let appender = OpentelemetryLogBuilder::new(configuration.service_name.clone(), exporter)
-            .label("service.name", configuration.service_name.clone())
+            })?
             .build();
 
-        logforth::starter_log::builder()
-            .dispatch(|b| b.filter(filter).append(appender))
-            .apply();
+        // Clone is not implemented on this logforth version, thus I have to construct the filter
+        // twice. I submitted a patch upstream, which got accepted. Now we need it to get released:
+        // https://github.com/fast/logforth/pull/237
+        let filter2 = RustLogFilterBuilder::try_from_spec(&configuration.filter)
+            .map_err(|err| {
+                Error::new_with_source(
+                    ErrorKind::Unexpected,
+                    "Something unexpected happened".into(),
+                    None,
+                    "Parsing logging filter",
+                    anyhow::Error::new(err),
+                )
+            })?
+            .build();
+
+        let mut builder = logforth::core::builder();
+
+        if let Some(otlp_config) = &configuration.opentelemetry {
+            let appender = {
+                let exporter = LogExporter::builder()
+                    .with_tonic()
+                    .with_endpoint(&otlp_config.endpoint)
+                    .with_protocol(Protocol::Grpc)
+                    .build()
+                    .map_err(|err| {
+                        Error::new_with_source(
+                            ErrorKind::Unexpected,
+                            "Something unexpected happened".into(),
+                            None,
+                            "Building the otlp log exporter",
+                            anyhow::Error::new(err),
+                        )
+                    })?;
+
+                OpentelemetryLogBuilder::new(otlp_config.service_name.clone(), exporter)
+                    .label("service.name", otlp_config.service_name.clone())
+                    .build()
+            };
+
+            builder = builder.dispatch(|b| b.filter(filter).append(appender));
+        }
+
+        if configuration.stderr {
+            builder = builder.dispatch(|b| {
+                b.filter(filter2)
+                    .append(Stderr::default().with_layout(TextLayout::default()))
+            });
+        }
+
+        _ = log::set_boxed_logger(Box::new(LogBridge::new(builder.build())));
 
         log::trace!("Horizon is starting. Now emitting logs over otlp.");
 
         Ok(())
+    }
+
+    fn initialize_metrics(configuration: &Observability) {
+        if let Some(otel_config) = &configuration.opentelemetry {
+            let reader = PeriodicReader::builder(InMemoryMetricExporter::default())
+                .with_interval(Duration::from_millis(100))
+                .build();
+
+            let provider = SdkMeterProvider::builder().with_reader(reader).build();
+
+            let scope = InstrumentationScope::builder(env!("CARGO_PKG_NAME"))
+                .with_attributes([
+                    KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+                    KeyValue::new(
+                        "deployment.environment.name",
+                        otel_config.service_name.clone(),
+                    ),
+                ])
+                .build();
+
+            let recorder = OpenTelemetryRecorder::new(OpenTelemetryMetrics::new(
+                provider.meter_with_scope(scope),
+            ));
+
+            _ = metrics::set_global_recorder(recorder);
+
+            // TODO: Describe counters
+        }
     }
 
     async fn initialize_database(
