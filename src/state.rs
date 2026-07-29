@@ -31,6 +31,7 @@ use crate::{
 pub struct State {
     pub configuration: Configuration,
     pub database: mongodb::Database,
+    _meter_provider: Option<SdkMeterProvider>,
 }
 
 impl State {
@@ -48,7 +49,7 @@ impl State {
 
         initialize_logging(&configuration.observability).context("Initializing logging")?;
 
-        initialize_metrics(&configuration.observability);
+        let meter_provider = initialize_metrics(&configuration.observability);
 
         let database = initialize_database(&configuration)
             .await
@@ -59,6 +60,7 @@ impl State {
         Ok(Self {
             configuration,
             database,
+            _meter_provider: meter_provider
         })
     }
 }
@@ -138,35 +140,47 @@ fn initialize_logging(configuration: &Observability) -> Result<(), Error> {
     Ok(())
 }
 
-fn initialize_metrics(configuration: &Observability) {
-    if let Some(otel_config) = &configuration.opentelemetry {
-        let reader = PeriodicReader::builder(InMemoryMetricExporter::default())
-            .with_interval(Duration::from_millis(100))
-            .build();
+fn initialize_metrics(configuration: &Observability) -> Option<SdkMeterProvider> {
+    configuration.opentelemetry.as_ref().map_or_else(
+        || {
+            log::trace!("Skipped initializing metrics. Opentelemetry is not configured.");
 
-        let provider = SdkMeterProvider::builder().with_reader(reader).build();
+            None
+        },
+        |otel_config| {
+            let reader = PeriodicReader::builder(InMemoryMetricExporter::default())
+                .with_interval(Duration::from_millis(100))
+                .build();
 
-        let scope = InstrumentationScope::builder(env!("CARGO_PKG_NAME"))
-            .with_attributes([
-                KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
-                KeyValue::new(
-                    "deployment.environment.name",
-                    otel_config.service_name.clone(),
-                ),
-            ])
-            .build();
+            let provider = SdkMeterProvider::builder().with_reader(reader).build();
 
-        let recorder =
-            OpenTelemetryRecorder::new(OpenTelemetryMetrics::new(provider.meter_with_scope(scope)));
+            let scope = InstrumentationScope::builder(env!("CARGO_PKG_NAME"))
+                .with_attributes([
+                    KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+                    KeyValue::new(
+                        "deployment.environment.name",
+                        otel_config.service_name.clone(),
+                    ),
+                ])
+                .build();
 
-        _ = metrics::set_global_recorder(recorder);
+            let recorder = OpenTelemetryRecorder::new(OpenTelemetryMetrics::new(
+                provider.meter_with_scope(scope),
+            ));
 
-        // TODO: Describe counters
+            _ = metrics::set_global_recorder(recorder);
 
-        log::trace!("Initialized metrics.");
-    } else {
-        log::trace!("Skipped initializing metrics. Opentelemetry is not configured.");
-    }
+            metrics::describe_counter!(
+                "requests_total",
+                metrics::Unit::Count,
+                "Total number of requests"
+            );
+
+            log::trace!("Initialized metrics.");
+
+            Some(provider)
+        },
+    )
 }
 
 async fn initialize_database(configuration: &Configuration) -> Result<mongodb::Database, Error> {

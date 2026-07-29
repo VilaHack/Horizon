@@ -53,6 +53,7 @@ pub struct Error {
     #[serde(skip_serializing)]
     context: Vec<&'static str>,
     #[serde(skip_serializing)]
+    #[allow(unused)] // The compiler doesn't register logging the error as a use for source
     source: Option<anyhow::Error>,
 }
 
@@ -144,13 +145,6 @@ pub trait Context<T> {
     /// It returns the same exact Result variant, as the one it's called on, it just converts
     /// whatever error type it carries into Horizon's `Error` type.
     fn context(self, context: impl Into<&'static str>) -> Result<T, Error>;
-
-    /// Convert to Horizon's error type if it isn't already and add context if the result is an `Error`, including the `request_id`
-    ///
-    /// # Errors
-    /// It returns the same exact Result variant, as the one it's called on, it just converts
-    /// whatever error type it carries into Horizon's `Error` type.
-    fn root_context(self, context: impl Into<&'static str>, request_id: Uuid) -> Result<T, Error>;
 }
 
 impl<T, E> Context<T> for Result<T, E>
@@ -166,21 +160,11 @@ where
 
         mapped
     }
-
-    fn root_context(self, context: impl Into<&'static str>, request_id: Uuid) -> Result<T, Error> {
-        let mut mapped: Result<T, Error> = self.map_err(Into::into);
-
-        if let Err(ref mut error) = mapped {
-            error.context.push(context.into());
-            error.request_id = Some(request_id);
-        }
-
-        mapped
-    }
 }
 
 impl IntoResponse for Error {
     fn into_response(mut self) -> Response {
+        self.request_id = Some(Uuid::new());
         self.context.push("Fulfilling an HTTP request");
 
         let http_code = match self.kind {
@@ -284,7 +268,7 @@ impl From<axum::extract::rejection::JsonRejection> for Error {
         Self {
             kind: ErrorKind::BadRequest,
             message: value.body_text(),
-            request_id: Some(Uuid::new()),
+            request_id: None,
             context: vec!["Extracting json from request body"],
             source,
         }

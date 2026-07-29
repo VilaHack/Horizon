@@ -3,8 +3,6 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 
-use mongodb::bson::Uuid;
-
 use crate::{
     Json, State as Horizon,
     authentication::Session,
@@ -62,16 +60,14 @@ use crate::{
     )
 )]
 pub async fn login(
-    jar: CookieJar,
     state: State<Arc<Horizon>>,
+    jar: CookieJar,
     Json(credentials): Json<Credentials>,
 ) -> Result<CookieJar, Error> {
-    let request_id = Uuid::new();
-
     let user_id = credentials
         .verify(&state.database)
         .await
-        .root_context("Verifying credentials", request_id)?;
+        .context("Verifying credentials")?;
 
     let session_id = Session::new(
         user_id,
@@ -79,7 +75,7 @@ pub async fn login(
         &state.database,
     )
     .await
-    .root_context("Creating new session", request_id)?;
+    .context("Creating new session")?;
 
     let cookie = Cookie::build(("sessin_id", session_id))
         .domain(state.configuration.authentication.domain.clone())

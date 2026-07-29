@@ -18,6 +18,24 @@ use crate::error::Context;
 #[from_request(via(axum::Json), rejection(error::Error))]
 pub struct Json<T>(T);
 
+use axum::{
+    extract::Request,
+    middleware::{self, Next},
+    response::Response,
+};
+
+async fn metrics(request: Request, next: Next) -> Response {
+    let method = request.method().to_string();
+    let path = request.uri().path().to_string();
+    let response = next.run(request).await;
+    let status = response.status().to_string();
+
+    metrics::counter!("requests_total", "method" => method, "path" => path, "status" => status)
+        .increment(1);
+
+    response
+}
+
 /// Run Horizon
 ///
 /// # Errors
@@ -37,9 +55,20 @@ pub async fn run() -> Result<(), error::Error> {
 
     let bind_address = state.configuration.http.bind_address;
 
+    let metrics_layer = state
+        .configuration
+        .observability
+        .opentelemetry
+        .is_some()
+        .then(|| middleware::from_fn(metrics));
+
     let router = axum::Router::new()
         .nest("/api/v0/auth", authentication::router())
-        .layer(cors_layer)
+        .layer(
+            tower::ServiceBuilder::new()
+                .layer(cors_layer)
+                .option_layer(metrics_layer),
+        )
         .with_state(Arc::new(state));
 
     let listener = tokio::net::TcpListener::bind(bind_address)
