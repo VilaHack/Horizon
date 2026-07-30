@@ -60,7 +60,9 @@ pub struct Database {
 pub struct EmailTemplate {
     pub subject: String,
     /// Path to the liquid template containing the path
-    pub body: PathBuf,
+    pub html_body: PathBuf,
+    /// Body that will be sent as a fallback plaintext alternative to the html
+    pub fallback_body: PathBuf,
 }
 
 #[derive(Deserialize, Debug)]

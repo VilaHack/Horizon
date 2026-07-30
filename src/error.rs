@@ -36,6 +36,10 @@ pub enum ErrorKind {
     /// to that scope
     InsufficientPermissions,
 
+    // Email
+    /// The SMTP relay gave a negative response when asked to forward an email
+    EmailFailed,
+
     // General
     /// Something unexpected happened. See the message and the source for more information
     #[default]
@@ -186,6 +190,11 @@ impl IntoResponse for Error {
                 StatusCode::BAD_REQUEST
             }
 
+            ErrorKind::EmailFailed => {
+                log::trace!("{self:#?}");
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
+
             ErrorKind::Unexpected => {
                 log::warn!("{self:#?}");
                 StatusCode::INTERNAL_SERVER_ERROR
@@ -271,6 +280,44 @@ impl From<axum::extract::rejection::JsonRejection> for Error {
             request_id: None,
             context: vec!["Extracting json from request body"],
             source,
+        }
+    }
+}
+
+impl From<liquid::Error> for Error {
+    fn from(value: liquid::Error) -> Self {
+        Self {
+            kind: ErrorKind::Unexpected,
+            message: "Something unexpected happened".into(),
+            request_id: None,
+            context: vec!["Dealing with liquid"],
+            source: Some(anyhow::Error::new(value)),
+        }
+    }
+}
+
+impl From<lettre::transport::smtp::Error> for Error {
+    fn from(value: lettre::transport::smtp::Error) -> Self {
+        Self {
+            kind: ErrorKind::Unexpected,
+            message: "Something unexpected happened".into(),
+            request_id: None,
+            context: vec!["Dealing with an SMTP connection"],
+            source: Some(anyhow::Error::new(value)),
+        }
+    }
+}
+
+impl From<lettre::address::AddressError> for Error {
+    fn from(value: lettre::address::AddressError) -> Self {
+        let message = format!("Email address is not valid: {value}");
+
+        Self {
+            kind: ErrorKind::BadRequest,
+            message,
+            request_id: None,
+            context: vec!["Parsing an email address"],
+            source: Some(anyhow::Error::new(value)),
         }
     }
 }

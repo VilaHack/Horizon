@@ -37,11 +37,16 @@ pub struct Session {
     scopes: Vec<Scope>,
 }
 
-/// Projection of user used only for building sessions
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-struct User {
-    team: Option<Uuid>,
+#[derive(Debug, serde::Deserialize)]
+struct ProjectedAuth {
     scopes: Vec<Scope>,
+}
+
+/// Projection of user used only for building sessions
+#[derive(Debug, serde::Deserialize)]
+struct ProjectedUser {
+    team: Option<Uuid>,
+    auth: ProjectedAuth,
 }
 
 impl Session {
@@ -57,14 +62,18 @@ impl Session {
     pub async fn new(user: Uuid, key: &HmacKey, database: &Database) -> Result<String, Error> {
         let token = Token::new();
 
-        let user_projection: Option<User> = database
+        let user_projection: Option<ProjectedUser> = database
             .collection("users")
             .find_one(doc! { "_id": user })
             .projection(doc! { "team": 1, "auth.scopes": 1 })
             .await
             .context("Getting a user's team and scopes")?;
 
-        let Some(User { team, scopes }) = user_projection else {
+        let Some(ProjectedUser {
+            team,
+            auth: ProjectedAuth { scopes },
+        }) = user_projection
+        else {
             return Err(Error::new(
                 ErrorKind::Unexpected,
                 "Something unexpected happened while trying to create a new session".into(),
@@ -211,7 +220,7 @@ impl Session {
         } else {
             Err(Error::new(
                 ErrorKind::SessionNotFound,
-                "Something unexpected happened while trying to delete sessions".into(),
+                "Something unexpected happened".into(),
                 "Deleting zero sessions",
             ))
         }
@@ -253,7 +262,7 @@ impl FromRequestParts<Arc<State>> for Session {
         let csrf_token = csrf_token.to_str().map_err(|err| {
             Error::new_with_source(
                 ErrorKind::Unexpected,
-                "Something unexpected happened while trying to authenticate the caller".into(),
+                "Something unexpected happened".into(),
                 "Converting a header value to a &str",
                 anyhow::Error::new(err),
             )

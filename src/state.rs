@@ -25,6 +25,7 @@ use crate::{
     authentication::Session,
     configuration::{Configuration, Observability},
     error::{Context, Error, ErrorKind},
+    user::User,
 };
 
 /// Represents Horizon's state
@@ -60,7 +61,7 @@ impl State {
         Ok(Self {
             configuration,
             database,
-            _meter_provider: meter_provider
+            _meter_provider: meter_provider,
         })
     }
 }
@@ -228,10 +229,6 @@ async fn initialize_database(configuration: &Configuration) -> Result<mongodb::D
             .keys(doc! { "last_seen_at": 1 })
             .options(ttl_index_options)
             .build(),
-        IndexModel::builder()
-            .keys(doc! { "email": 1, })
-            .options(unique_index_optins)
-            .build(),
     ];
 
     _ = database
@@ -239,6 +236,17 @@ async fn initialize_database(configuration: &Configuration) -> Result<mongodb::D
         .create_indexes(indexes)
         .await
         .context("Creating session indexes")?;
+
+    _ = database
+        .collection::<User>("users")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "auth.email": 1, })
+                .options(unique_index_optins)
+                .build(),
+        )
+        .await
+        .context("Creating user indexes")?;
 
     log::trace!("Connected to database.");
 

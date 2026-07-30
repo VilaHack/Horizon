@@ -1,5 +1,6 @@
 pub mod authentication;
 mod configuration;
+pub mod email;
 pub mod error;
 mod state;
 mod user;
@@ -24,6 +25,7 @@ use axum::{
     response::Response,
 };
 
+/// Used as a middleware layer for the axum service
 async fn metrics(request: Request, next: Next) -> Response {
     let method = request.method().to_string();
     let path = request.uri().path().to_string();

@@ -1,3 +1,3 @@
 mod model;
 
-pub use model::{Credentials, Login};
+pub use model::User;

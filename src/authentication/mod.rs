@@ -2,4 +2,4 @@ mod api;
 mod model;
 
 pub use api::router;
-pub use model::{Scope, Session, scoped};
+pub use model::{Auth, Credentials, Scope, Session, Token, scoped};

@@ -3,7 +3,7 @@ name = "horizon"
 description = "The software that powers VilaHack"
 keywords = [ "ctf" ]
 
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.91"
 
@@ -28,7 +28,7 @@ tower-http = { version = "0.7", features = ["cors"] }
 mongodb = { version = "3", features = ["snappy-compression"] }
 
 # Authentication
-argon2 = "0.5"
+argon2 = { version = "0.5", features = ["std"] }
 hex = "0.4"
 hmac = "0.13"
 rand = { version = "0.10", features = ["thread_rng"] }

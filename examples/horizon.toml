@@ -32,7 +32,7 @@ allowed_origins = [
 uri = "mongodb://horizon_db_user:super_secure_password@localhost:27017/my_ctf_db?appName=Horizon"
 
 [smtp]
-relay = "smtp.my_ctf.com" # SMTP Relay FQDN
+relay = "smtp.my_ctf.com" # STARTTLS SMTP Relay FQDN
 credentials = {
     authentication_identity = "horizon_smtp_user",
     secret = "super_secure_password"
@@ -42,20 +42,30 @@ send_from = "My CTF <robot@my_ctf.com>"
 reply_to = "Do not reply to this email <noreply@my_ctf.com>"
 
 [smtp.templates]
+# The `token` variable is available to the `verification` and `forgot_password`
+# templates.
+# The `name` variable is available to the `application_acceptance` template.
+#
+# HTML formatted messages must have a plaintext fallback. This is why there are
+# two body templates per email type. Email clients will preferably display the
+# HTML body.
 verification = {
     subject = "[My CTF] Verify your email address",
-    body = "verification_email.liquid.html" # File path to email liquid template
-}                                           #  
-                                            # The variable `url` is used for
-forgot_password = {                         # the verification and password
-    subject = "[My CTF] Password reset",    # reset templates.
-    body = "forgotten_password_email.liquid.html"
+    body_html = "/path/to/verification_email.liquid.html",   # Absolute file
+    fallback_body = "/path/to/verification_email.liquid.txt" # path to liquid
+}                                                            # template.
+
+forgot_password = {
+    subject = "[My CTF] Password reset",
+    body_html = "/path/to/forgotten_password_email.liquid.html",
+    fallback_body = "/path/to/forgotten_password_email.liquid.txt"
 }
 
 application_acceptance = {
     subject = "[My CTF] You've been accepted! Please confirm your attendance",
-    body = "application_accepted.liquid.html" # The variable `name` is
-}                                             # available.
+    body_html = "/path/to/application_accepted.liquid.html",
+    fallback_body = "/path/to/forgotten_password_email.liquid.txt"
+}                                                    
 
 [observability]
 filter = "info,horizon=trace" # Emmit all logs for Horizon and only logs of

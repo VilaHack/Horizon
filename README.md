@@ -11,7 +11,7 @@ You can find a configuration file example in the [examples directory](https://gi
 
 ## Features
 - [ ] Authentication
-  - [ ] Sign up and log in
+  - [X] Sign up and log in
   - [ ] Email verification and password reset
   - [X] Session based authentication
   - [X] Access scopes

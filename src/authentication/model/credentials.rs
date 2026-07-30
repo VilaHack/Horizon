@@ -1,32 +1,33 @@
 use mongodb::{
     Database,
-    bson::{DateTime, Uuid, doc},
+    bson::{Uuid, doc},
 };
 
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 
-use crate::{
-    authentication::Scope,
-    error::{Context, Error, ErrorKind},
-};
-
-/// Represents a user's login details, as stored on the database
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct Login {
-    email: String,
-    password: String,
-    email_verified: bool,
-    created_at: DateTime,
-    scopes: Vec<Scope>,
-}
+use crate::error::{Context, Error, ErrorKind};
 
 /// Represents a user's login credentials
 #[derive(
     Clone, Debug, PartialEq, Eq, Hash, serde::Deserialize, utoipa::ToSchema, utoipa::IntoParams,
 )]
 pub struct Credentials {
-    email: String,
-    password: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AuthProjection {
+    #[serde(rename = "password")]
+    password_hash: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct UserProjection {
+    #[serde(rename = "_id")]
+    id: Uuid,
+
+    auth: AuthProjection,
 }
 
 impl Credentials {
@@ -37,14 +38,18 @@ impl Credentials {
     ///
     /// May return an error if there's an issue communicating with the database
     pub async fn verify(&self, database: &Database) -> Result<Uuid, Error> {
-        let projected_user: Option<(Uuid, String)> = database
-            .collection("users")
+        let projected_user = database
+            .collection::<UserProjection>("users")
             .find_one(doc! { "auth.email": &self.email })
-            .projection(doc! { "auth.password": 1, })
+            .projection(doc! { "_id": 1, "auth.password": 1, })
             .await
             .context("Getting a user's password hash")?;
 
-        let Some((user_id, password_hash)) = projected_user else {
+        let Some(UserProjection {
+            id,
+            auth: AuthProjection { password_hash },
+        }) = projected_user
+        else {
             return Err(Error::new(
                 ErrorKind::InvalidCredentials,
                 "Incorrect email or password".into(),
@@ -61,6 +66,6 @@ impl Credentials {
 
         // By this point the password has been verified to be correct.
 
-        Ok(user_id)
+        Ok(id)
     }
 }

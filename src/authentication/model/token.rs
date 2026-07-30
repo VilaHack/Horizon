@@ -11,6 +11,7 @@ pub struct Token {
 
 impl Token {
     /// Creates a new random token
+    #[must_use]
     pub fn new() -> Self {
         let mut token = Self { token: [0; 32] };
 
@@ -20,11 +21,16 @@ impl Token {
     }
 
     /// Returns the token encoded as hex on a `String`.
+    #[must_use]
     pub fn hex(&self) -> String {
         hex::encode(self.token)
     }
 
     /// Returns the token's HMAC as hex on a `String`, given the HMAC key
+    ///
+    /// # Panics
+    /// Should never painc unless the `hmac` dependency breaks and changes the sha256 key size
+    #[must_use]
     pub fn hmac(&self, key: &HmacKey) -> String {
         let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("hmac dependency broke");
         mac.update(&self.token);
@@ -32,6 +38,10 @@ impl Token {
     }
 
     /// Verifies if the given HMAC matches the token, given the HMAC key
+    ///
+    /// # Panics
+    /// Should never painc unless the `hmac` dependency breaks and changes the sha256 key size
+    #[must_use]
     pub fn verify(&self, hmac: &str, key: &HmacKey) -> bool {
         let Ok(hmac) = hex::decode(hmac) else {
             return false;
@@ -52,5 +62,11 @@ impl TryFrom<&str> for Token {
         hex::decode_to_slice(value, &mut token.token)?;
 
         Ok(token)
+    }
+}
+
+impl Default for Token {
+    fn default() -> Self {
+        Self::new()
     }
 }
