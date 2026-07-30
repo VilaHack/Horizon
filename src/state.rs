@@ -213,7 +213,7 @@ async fn initialize_database(configuration: &Configuration) -> Result<mongodb::D
         options
     };
 
-    let unique_index_optins = {
+    let unique_index_options = {
         let mut options = IndexOptions::default();
 
         options.unique = Some(true);
@@ -242,7 +242,7 @@ async fn initialize_database(configuration: &Configuration) -> Result<mongodb::D
         .create_index(
             IndexModel::builder()
                 .keys(doc! { "auth.email": 1, })
-                .options(unique_index_optins)
+                .options(unique_index_options)
                 .build(),
         )
         .await
