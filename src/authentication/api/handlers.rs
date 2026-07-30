@@ -13,24 +13,19 @@ use crate::{
 };
 
 /// Creates the user's account and sends a verification email
-///
-/// # Errors
-/// Described in utoipa macro
 #[utoipa::path(
     post,
-    path = "/api/v0/auth/signup",
-    params(
-        Credentials,
-    ),
+    tag = "Authentication",
+    path = "/auth/signup",
+    request_body = Credentials,
     responses(
         (
             status = 200,
-            description = "
-                The user has been created and the verification email has been sent.
-
-                If the user already exists, the response will sill be 200 OK. This is to make
-                it indistinguishable to the user that an account with that email already exists.
-                They should be told that a verification email has been sent, even if it really
+            description = "\
+                The user has been created and the verification email has been sent. \n\n\
+                If the user already exists, the response will sill be 200 OK. This is to make \
+                it indistinguishable to the user that an account with that email already exists. \
+                They should be told that a verification email has been sent, even if it really \
                 wasn't.
             "
         ),
@@ -46,10 +41,10 @@ use crate::{
         ),
         (
             status = 422,
-            description = "
-                The SMTP relay gave a negative response, meaning it could not forward the message.
-                While this could be the relay's fault, it most likely is because the address doesn't point
-                to any valid smtp server.
+            description = "\
+                The SMTP relay gave a negative response, meaning it could not forward the message. \
+                While this could be the relay's fault, it most likely is because the address doesn't point \
+                to any valid smtp server. \
             ",
             body = [Error],
             example = json!({
@@ -109,15 +104,11 @@ pub async fn signup(
 }
 
 /// Checks the credentials and adds a session cookie if valid
-///
-/// # Errors
-/// Described in utoipa macro
 #[utoipa::path(
     post,
-    path = "/api/v0/auth/login",
-    params(
-        Credentials,
-    ),
+    tag = "Authentication",
+    path = "/auth/login",
+    request_body = Credentials,
     responses(
         (
             status = 200,
@@ -184,12 +175,10 @@ pub async fn login(
 }
 
 /// Logs out the passed session
-///
-/// # Errors
-/// Described in utoipa macro
 #[utoipa::path(
     post,
-    path = "/api/v0/auth/logout",
+    tag = "Authentication",
+    path = "/auth/logout",
     params(
         ("X-CSRF-Token" = String, Header, description = "Anti-CSRF token. Looks like 32 bytes encoded in hex"),
         ("session_id" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
@@ -252,12 +241,10 @@ pub async fn logout(
 }
 
 /// Logs out all the user's sessions
-///
-/// # Errors
-/// Described in utoipa macro
 #[utoipa::path(
     post,
-    path = "/api/v0/auth/logout_all",
+    tag = "Authentication",
+    path = "/auth/logout_all",
     params(
         ("X-CSRF-Token" = String, Header, description = "Anti-CSRF token. Looks like 32 bytes encoded in hex"),
         ("session_id" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
@@ -265,9 +252,9 @@ pub async fn logout(
     responses(
         (
             status = 200,
-            description = "
-                All the sessions have been logged out, and the caller's cookie removed from the jar.
-                Cookies in other clients will still be present, but invalid.
+            description = "\
+                All the sessions have been logged out, and the caller's cookie removed from the jar. \
+                Cookies in other clients will still be present, but invalid. \
             "
         ),
         (
