@@ -39,6 +39,8 @@ pub enum ErrorKind {
     // Email
     /// The SMTP relay gave a negative response when asked to forward an email
     EmailFailed,
+    /// During email verification, no matching active token has been found. It's probably expired or invalid
+    EmailTokenNotFound,
 
     // General
     /// Something unexpected happened. See the message and the source for more information
@@ -193,6 +195,11 @@ impl IntoResponse for Error {
             ErrorKind::EmailFailed => {
                 log::trace!("{self:#?}");
                 StatusCode::UNPROCESSABLE_ENTITY
+            }
+
+            ErrorKind::EmailTokenNotFound => {
+                log::trace!("{self:#?}");
+                StatusCode::GONE
             }
 
             ErrorKind::Unexpected => {

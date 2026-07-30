@@ -19,6 +19,8 @@
 
             openssl
 
+            tokio-console # For debugging async code
+
             (rustVersion.override {
               extensions = [ "rust-src" "rust-analyzer" ];
             })

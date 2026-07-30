@@ -38,3 +38,6 @@ You can find a configuration file example in the [examples directory](https://gi
 - [X] Telemetry
   - [X] Usage analytics
   - [X] Logging
+
+### Feature flags
+Horizon can be built with the compiler flag `tokio_unstable` and the feature flag `tokio-console` to enable instrumenting Horizon for [`tokio-console`](https://github.com/tokio-rs/console)

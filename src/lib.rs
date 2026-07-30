@@ -2,28 +2,29 @@ pub mod authentication;
 mod configuration;
 pub mod email;
 pub mod error;
+mod openapi;
 mod state;
 mod user;
 
 use std::sync::Arc;
 
-use axum::http::{
-    Method,
-    header::{ACCEPT, CONTENT_TYPE},
+use axum::{
+    extract::Request,
+    http::{
+        Method,
+        header::{ACCEPT, CONTENT_TYPE},
+    },
+    middleware::{self, Next},
+    response::Response,
+    routing::get,
 };
-pub use state::State;
 
 use crate::error::Context;
+pub use state::State;
 
 #[derive(axum::extract::FromRequest)]
 #[from_request(via(axum::Json), rejection(error::Error))]
 pub struct Json<T>(T);
-
-use axum::{
-    extract::Request,
-    middleware::{self, Next},
-    response::Response,
-};
 
 /// Used as a middleware layer for the axum service
 async fn metrics(request: Request, next: Next) -> Response {
@@ -66,6 +67,7 @@ pub async fn run() -> Result<(), error::Error> {
 
     let router = axum::Router::new()
         .nest("/api/v0/auth", authentication::router())
+        .route("/api/v0/openapi.json", get(openapi::openapi_json))
         .layer(
             tower::ServiceBuilder::new()
                 .layer(cors_layer)

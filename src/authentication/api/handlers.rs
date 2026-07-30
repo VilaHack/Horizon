@@ -6,31 +6,26 @@ use lettre::message::Mailbox;
 
 use crate::{
     Json, State as Horizon,
-    authentication::{Credentials, Session, api::SESSION_COOKIE},
+    authentication::{Credentials, Session, Token, api::SESSION_COOKIE},
     email::Email,
     error::{Context, Error},
     user::User,
 };
 
 /// Creates the user's account and sends a verification email
-///
-/// # Errors
-/// Described in utoipa macro
 #[utoipa::path(
     post,
-    path = "/api/v0/auth/signup",
-    params(
-        Credentials,
-    ),
+    tag = "Authentication",
+    path = "/auth/signup",
+    request_body = Credentials,
     responses(
         (
             status = 200,
-            description = "
-                The user has been created and the verification email has been sent.
-
-                If the user already exists, the response will sill be 200 OK. This is to make
-                it indistinguishable to the user that an account with that email already exists.
-                They should be told that a verification email has been sent, even if it really
+            description = "\
+                The user has been created and the verification email has been sent. \n\n\
+                If the user already exists, the response will sill be 200 OK. This is to make \
+                it indistinguishable to the user that an account with that email already exists. \
+                They should be told that a verification email has been sent, even if it really \
                 wasn't.
             "
         ),
@@ -46,10 +41,10 @@ use crate::{
         ),
         (
             status = 422,
-            description = "
-                The SMTP relay gave a negative response, meaning it could not forward the message.
-                While this could be the relay's fault, it most likely is because the address doesn't point
-                to any valid smtp server.
+            description = "\
+                The SMTP relay gave a negative response, meaning it could not forward the message. \
+                While this could be the relay's fault, it most likely is because the address doesn't point \
+                to any valid smtp server. \
             ",
             body = [Error],
             example = json!({
@@ -108,16 +103,68 @@ pub async fn signup(
     email.send().await.context("Sending verification email")
 }
 
-/// Checks the credentials and adds a session cookie if valid
+/// Verifies the email address of the user with the given email token
 ///
 /// # Errors
 /// Described in utoipa macro
 #[utoipa::path(
     post,
-    path = "/api/v0/auth/login",
+    path = "/api/v0/auth/verify_email",
     params(
         Credentials,
     ),
+    responses(
+        (
+            status = 200,
+            description = "The user has been verified"
+        ),
+        (
+            status = 400,
+            description = "The JSON was not correctly formatted or the email address is invalid",
+            body = [Error],
+            example = json!({
+                "kind": "bad_request",
+                "message": "Failed to deserialize the JSON body into the target type: missing field `token` at line 1 column 1",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        ),
+        (
+            status = 410,
+            description = "
+                No matching active token has been found. It's probably expired or invalid.
+            ",
+            body = [Error],
+            example = json!({
+                "kind": "email_token_not_found",
+                "message": "The verification token has expired or invalid",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        ),
+        (
+            status = 500,
+            description = "Something went wrong and it's not the caller's fault",
+            body = [Error],
+            example = json!({
+                "kind": "unexpected",
+                "message": "Something unexpected happened",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        )
+    )
+)]
+pub async fn verify_email(
+    state: State<Arc<Horizon>>,
+    Json(token): Json<Token>,
+) -> Result<(), Error> {
+    Ok(())
+}
+
+/// Checks the credentials and adds a session cookie if valid
+#[utoipa::path(
+    post,
+    tag = "Authentication",
+    path = "/auth/login",
+    request_body = Credentials,
     responses(
         (
             status = 200,
@@ -184,12 +231,10 @@ pub async fn login(
 }
 
 /// Logs out the passed session
-///
-/// # Errors
-/// Described in utoipa macro
 #[utoipa::path(
     post,
-    path = "/api/v0/auth/logout",
+    tag = "Authentication",
+    path = "/auth/logout",
     params(
         ("X-CSRF-Token" = String, Header, description = "Anti-CSRF token. Looks like 32 bytes encoded in hex"),
         ("session_id" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
@@ -252,12 +297,10 @@ pub async fn logout(
 }
 
 /// Logs out all the user's sessions
-///
-/// # Errors
-/// Described in utoipa macro
 #[utoipa::path(
     post,
-    path = "/api/v0/auth/logout_all",
+    tag = "Authentication",
+    path = "/auth/logout_all",
     params(
         ("X-CSRF-Token" = String, Header, description = "Anti-CSRF token. Looks like 32 bytes encoded in hex"),
         ("session_id" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
@@ -265,9 +308,9 @@ pub async fn logout(
     responses(
         (
             status = 200,
-            description = "
-                All the sessions have been logged out, and the caller's cookie removed from the jar.
-                Cookies in other clients will still be present, but invalid.
+            description = "\
+                All the sessions have been logged out, and the caller's cookie removed from the jar. \
+                Cookies in other clients will still be present, but invalid. \
             "
         ),
         (

@@ -2,7 +2,7 @@ use mongodb::{Database, bson::Uuid, error::ErrorKind as MdbErr, error::WriteFail
 
 use crate::{
     authentication::{Auth, Credentials, Token},
-    error::{Context, Error, ErrorKind::Unexpected},
+    error::{Context, Error},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -28,23 +28,16 @@ impl User {
         database: &Database,
         key: &[u8; 32],
     ) -> Result<Option<String>, Error> {
-        let Some(ref mut email_verification_token) = self.auth.email_verification_token else {
-            return Err(Error::new(
-                Unexpected,
-                "Something unexpected happened".into(),
-                "Getting email_verification_token from new user instance",
-            ));
-        };
-
-        let token = Token::try_from(&email_verification_token.code[..])
+        let token = Token::try_from(&self.auth.email_verification_token.code[..])
             .context("Building token from String")?;
 
-        email_verification_token.code = token.hmac(key);
+        // Keep the code on the database instead
+        self.auth.email_verification_token.code = token.hmac(key);
 
         let result = database.collection::<Self>("users").insert_one(self).await;
 
         // If the error MongoDB returns is a write faliure, it probably means there exists a user
-        // with the given email
+        // with the given email. None is used to indicate everything went well but no user was created
         let result = match result {
             Ok(_) => Ok(Some(token.hex())),
             Err(err) => match *err.kind {
@@ -64,7 +57,7 @@ impl TryFrom<Credentials> for User {
     fn try_from(value: Credentials) -> Result<Self, Self::Error> {
         Ok(Self {
             _id: Uuid::new(),
-            auth: value.try_into().context("meow")?,
+            auth: value.try_into().context("TODO")?,
         })
     }
 }

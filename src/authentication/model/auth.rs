@@ -2,11 +2,10 @@ use argon2::{
     Argon2, PasswordHasher,
     password_hash::{SaltString, rand_core::OsRng},
 };
-use mongodb::bson::DateTime;
+use mongodb::{Database, bson::{DateTime, doc}};
 
 use crate::{
-    authentication::{Credentials, Scope, Token},
-    error::{Context, Error},
+    authentication::{Credentials, Scope, Token, model::token::HmacKey}, error::{Context, Error},
 };
 
 /// Represents a user's authentication details, as stored on the database
@@ -17,7 +16,7 @@ pub struct Auth {
     pub email_verified: bool,
     pub created_at: DateTime,
     pub scopes: Vec<Scope>,
-    pub email_verification_token: Option<VerificationToken>,
+    pub email_verification_token: VerificationToken,
     pub password_reset_token: Option<VerificationToken>,
 }
 
@@ -25,6 +24,14 @@ pub struct Auth {
 pub struct VerificationToken {
     pub code: String,
     pub created_at: DateTime,
+}
+
+impl Auth {
+    pub async fn verify_email(token: &Token, database: &Database, key: HmacKey) -> Result<(), Error> {
+        let result = database.collection::<Auth>("users.auth").find_one_and_delete(doc! {"email_verification_token": token.hmac(key)})
+
+        todo!()
+    }
 }
 
 impl TryFrom<Credentials> for Auth {
@@ -48,10 +55,10 @@ impl TryFrom<Credentials> for Auth {
             email_verified: false,
             created_at: DateTime::now(),
             scopes: Vec::with_capacity(0),
-            email_verification_token: Some(VerificationToken {
+            email_verification_token: VerificationToken {
                 code: token.hex(),
                 created_at: DateTime::now(),
-            }),
+            },
             password_reset_token: None,
         })
     }
