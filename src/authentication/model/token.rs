@@ -4,8 +4,11 @@ use sha2::Sha256;
 
 pub type HmacKey = [u8; 32];
 
-/// A random token
-#[derive(serde::Deserialize, utoipa::ToSchema)]
+/// A 32 byte token encoded as a hex string
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Deserialize, utoipa::ToSchema)]
+#[schema(example = json!({
+    "token": "f6551672a90f577ea24569c048076d322fce5679fdaa70cf0f82354d82bdf40b"
+}))]
 pub struct Token {
     #[serde(deserialize_with = "deserialize_token")]
     token: [u8; 32],
@@ -67,6 +70,12 @@ impl TryFrom<&str> for Token {
     }
 }
 
+impl From<[u8; 32]> for Token {
+    fn from(value: [u8; 32]) -> Self {
+        Self { token: value }
+    }
+}
+
 impl Default for Token {
     fn default() -> Self {
         Self::new()
@@ -80,7 +89,7 @@ impl Default for Token {
 ///
 /// # Errors
 /// Returns an error if the string isn't valid hex or if doesn't represent exacly 32 bytes.
-fn deserialize_token<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
+pub fn deserialize_token<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
 where
     D: serde::Deserializer<'de>,
 {

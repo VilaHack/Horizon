@@ -50,6 +50,12 @@ struct ProjectedUser {
 }
 
 impl Session {
+    /// Return the ID of the user the session belongs to
+    #[must_use]
+    pub const fn user_id(&self) -> Uuid {
+        self.user
+    }
+
     /// Create a new session for the given user
     ///
     /// Returns the hex-encoded `session_token`
@@ -225,6 +231,23 @@ impl Session {
             ))
         }
     }
+
+    /// Deletes all sessions associated with the user with the given id
+    ///
+    /// Logs out all of the user's sessions, but doesn't check if any were actually deleted. It
+    /// won't error if you try to delete sessions for a user that doesn't exist.
+    ///
+    /// # Errors
+    /// May return an error if there's an issue communicating with the database
+    pub async fn delete_all_unchecked(user: Uuid, database: &Database) -> Result<(), Error> {
+        database
+            .collection::<Self>("sessions")
+            .delete_many(doc! { "user": user })
+            .await
+            .context("Deleting all user sessions for a user")?;
+
+        Ok(())
+    }
 }
 
 impl FromRequestParts<Arc<State>> for Session {
@@ -289,8 +312,8 @@ pub mod scoped {
 
     use crate::{
         State,
-        authentication::{Scope, Session},
-        error::{Error, ErrorKind},
+        authentication::session::{Scope, Session},
+        error::{Context, Error, ErrorKind},
     };
 
     pub trait RequiredScope {
@@ -350,7 +373,9 @@ pub mod scoped {
             parts: &mut Parts,
             state: &Arc<State>,
         ) -> Result<Self, Self::Rejection> {
-            let session = Session::from_request_parts(parts, state).await?;
+            let session = Session::from_request_parts(parts, state)
+                .await
+                .context("Extracting a session from request parts")?;
 
             if !session.scopes.contains(&S::SCOPE) {
                 return Err(Error::new(

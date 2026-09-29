@@ -1,15 +1,16 @@
 use mongodb::{
     Database,
-    bson::{DateTime, Uuid},
+    bson::{DateTime, Uuid, doc},
     error::{ErrorKind as MdbErr, WriteFailure::WriteError},
 };
 
 use crate::{
-    authentication::{Auth, Credentials, Token, VerificationToken},
+    authentication::{Auth, Token, VerificationToken, credentials::Credentials},
     error::{Context, Error},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[allow(clippy::used_underscore_binding)]
 pub struct User {
     _id: Uuid,
     auth: Auth,
@@ -18,6 +19,12 @@ pub struct User {
 }
 
 impl User {
+    /// Returns the user's ID
+    #[must_use]
+    pub const fn id(&self) -> Uuid {
+        self._id
+    }
+
     /// Insert the (new) user to the database
     ///
     /// Returns the raw email verification token if the user has been created. Otherwise returns
@@ -53,6 +60,22 @@ impl User {
         };
 
         result.context("Inserting new user to database")
+    }
+
+    /// Deletes the user completely. Returns true if the user has been deleted
+    ///
+    /// *This is dangerous* and should only be done if it's known safe to delete this user.
+    ///
+    /// # Errors
+    /// Will return an error if there's an issue communicating with the database
+    pub async fn delete(&self, database: &Database) -> Result<bool, Error> {
+        Ok(database
+            .collection::<Self>("users")
+            .delete_one(doc! { "_id": self._id })
+            .await
+            .context("Nuking user completely")?
+            .deleted_count
+            == 1)
     }
 }
 

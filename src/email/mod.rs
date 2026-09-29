@@ -78,8 +78,6 @@ impl Email {
             .await
             .context("Sending email")?;
 
-        dbg!(&response);
-
         if response.is_positive() {
             Ok(())
         } else {
@@ -90,4 +88,13 @@ impl Email {
             ))
         }
     }
+}
+
+/// The only true way to verify an email is to send a message to it and have the recipient confirm
+/// it. This is why an email is just a string
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, serde::Deserialize, utoipa::ToSchema, utoipa::IntoParams,
+)]
+pub struct Address {
+    pub email: String,
 }

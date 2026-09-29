@@ -1,6 +1,8 @@
-mod api;
+pub mod api;
 mod model;
 
-pub use api::{AuthApiDocs, router};
-pub use model::AuthModelDocs;
-pub use model::{Auth, Credentials, Scope, Session, Token, VerificationToken, scoped};
+pub use model::{Auth, Token, VerificationToken, credentials, deserialize_token, session};
+
+pub mod openapi {
+    pub use crate::authentication::{api::AuthApiDocs, model::AuthModelDocs};
+}

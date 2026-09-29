@@ -1,3 +1,6 @@
+pub mod password;
+use password::Password;
+
 use mongodb::{
     Database,
     bson::{Uuid, doc},
@@ -13,7 +16,7 @@ use crate::error::{Context, Error, ErrorKind};
 )]
 pub struct Credentials {
     pub email: String,
-    pub password: String,
+    pub password: Password,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -26,7 +29,6 @@ struct AuthProjection {
 struct UserProjection {
     #[serde(rename = "_id")]
     id: Uuid,
-
     auth: AuthProjection,
 }
 
@@ -59,8 +61,8 @@ impl Credentials {
 
         Argon2::default()
             .verify_password(
-                self.password.as_bytes(),
-                &PasswordHash::new(&password_hash)?,
+                self.password.0.as_bytes(),
+                &PasswordHash::new(&password_hash).context("Parsing a password hash")?,
             )
             .context("Verifying password")?;
 

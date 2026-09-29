@@ -9,7 +9,7 @@ mod user;
 use std::sync::Arc;
 
 use axum::{
-    extract::Request,
+    extract::{MatchedPath, Request},
     http::{
         Method,
         header::{ACCEPT, CONTENT_TYPE},
@@ -29,9 +29,14 @@ pub struct Json<T>(T);
 /// Used as a middleware layer for the axum service
 async fn metrics(request: Request, next: Next) -> Response {
     let method = request.method().to_string();
-    let path = request.uri().path().to_string();
+
+    let path = request.extensions().get::<MatchedPath>().map_or_else(
+        || request.uri().path().to_string(),
+        |p| p.as_str().to_string(),
+    );
+
     let response = next.run(request).await;
-    let status = response.status().to_string();
+    let status = response.status().as_u16().to_string();
 
     metrics::counter!("requests_total", "method" => method, "path" => path, "status" => status)
         .increment(1);
@@ -66,7 +71,7 @@ pub async fn run() -> Result<(), error::Error> {
         .then(|| middleware::from_fn(metrics));
 
     let router = axum::Router::new()
-        .nest("/api/v0/auth", authentication::router())
+        .nest("/api/v0/auth", authentication::api::router())
         .route("/api/v0/openapi.json", get(openapi::openapi_json))
         .layer(
             tower::ServiceBuilder::new()

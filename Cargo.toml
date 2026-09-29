@@ -3,7 +3,7 @@ name = "horizon"
 description = "The software that powers VilaHack"
 keywords = [ "ctf" ]
 
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.91"
 
@@ -53,7 +53,7 @@ opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
 
 # Other
 anyhow = "1"
-utoipa = { version = "5", features = ["axum_extras", "uuid", "preserve_order"] }
+utoipa = { version = "5", features = ["axum_extras", "uuid", "preserve_order", "preserve_path_order"] }
 
 console-subscriber = { version = "0.5", optional = true }
 

@@ -41,6 +41,12 @@ pub enum ErrorKind {
     EmailFailed,
     /// During email verification, no matching active token has been found. It's probably expired or invalid
     EmailTokenNotFound,
+    /// The user requested a verification or password reset email but another happened too soon ago
+    EmailRequestTooSoon,
+
+    // Other
+    /// The password doesn't meet the minimum requirements for strength
+    WeakPassword,
 
     // General
     /// Something unexpected happened. See the message and the source for more information
@@ -61,6 +67,18 @@ pub struct Error {
     #[serde(skip_serializing)]
     #[allow(unused)] // The compiler doesn't register logging the error as a use for source
     source: Option<anyhow::Error>,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(std::convert::AsRef::as_ref)
+    }
 }
 
 impl Error {
@@ -192,7 +210,7 @@ impl IntoResponse for Error {
                 StatusCode::BAD_REQUEST
             }
 
-            ErrorKind::EmailFailed => {
+            ErrorKind::EmailFailed | ErrorKind::WeakPassword => {
                 log::trace!("{self:#?}");
                 StatusCode::UNPROCESSABLE_ENTITY
             }
@@ -200,6 +218,11 @@ impl IntoResponse for Error {
             ErrorKind::EmailTokenNotFound => {
                 log::trace!("{self:#?}");
                 StatusCode::GONE
+            }
+
+            ErrorKind::EmailRequestTooSoon => {
+                log::trace!("{self:#?}");
+                StatusCode::TOO_MANY_REQUESTS
             }
 
             ErrorKind::Unexpected => {

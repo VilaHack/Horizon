@@ -70,7 +70,7 @@ pub struct EmailTemplates {
     /// Email verification message template
     pub verification: EmailTemplate,
     /// Forgotten password reset message template
-    pub forgot_password: EmailTemplate,
+    pub password_reset: EmailTemplate,
     /// Application acceptance message template
     pub application_acceptance: EmailTemplate,
 }

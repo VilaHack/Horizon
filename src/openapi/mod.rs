@@ -2,7 +2,7 @@ use axum::response::Json;
 use utoipa::OpenApi;
 
 use crate::{
-    authentication::{AuthApiDocs, AuthModelDocs},
+    authentication::openapi::{AuthApiDocs, AuthModelDocs},
     error::Error,
 };
 

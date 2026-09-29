@@ -6,9 +6,14 @@ use lettre::message::Mailbox;
 
 use crate::{
     Json, State as Horizon,
-    authentication::{Auth, Credentials, Session, Token, api::SESSION_COOKIE},
-    email::Email,
-    error::{Context, Error},
+    authentication::{
+        Auth, Token,
+        api::SESSION_COOKIE,
+        credentials::{Credentials, password},
+        session::Session,
+    },
+    email::{self, Email},
+    error::{Context, Error, ErrorKind},
     user::User,
 };
 
@@ -100,16 +105,30 @@ pub async fn signup(
     )
     .context("Creating verification email")?;
 
-    email.send().await.context("Sending verification email")
+    let send_result = email.send().await.context("Sending verification email");
+
+    if send_result.is_err()
+        && !user
+            .delete(&state.database)
+            .await
+            .context("Undoing user creation after failed verification email send")?
+    {
+        return Err(Error::new(
+            ErrorKind::Unexpected,
+            "Something unexpected happened".into(),
+            "No user was deleted when trying to recover from failed email verification sending",
+        ));
+    }
+
+    send_result
 }
 
 /// Verifies the email address of the user with the given email token
 #[utoipa::path(
     post,
-    path = "auth/verify_email",
-    params(
-        Credentials,
-    ),
+    tag = "Authentication",
+    path = "/auth/verify_email",
+    request_body = Token,
     responses(
         (
             status = 200,
@@ -232,6 +251,8 @@ pub async fn login(
     Ok(jar.add(cookie))
 }
 
+// TODO: Implement /me
+
 /// Logs out the passed session
 #[utoipa::path(
     post,
@@ -239,7 +260,7 @@ pub async fn login(
     path = "/auth/logout",
     params(
         ("X-CSRF-Token" = String, Header, description = "Anti-CSRF token. Looks like 32 bytes encoded in hex"),
-        ("session_id" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
+        ("horizon_session" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
     ),
     responses(
         (
@@ -248,7 +269,7 @@ pub async fn login(
         ),
         (
             status = 401,
-            description = "The passed cookie jar did not include a `session_id` cookie",
+            description = "The passed cookie jar did not include a `horizon_session` cookie",
             body = [Error],
             example = json!({
                 "kind": "session_cookie_missing",
@@ -268,7 +289,7 @@ pub async fn login(
         ),
         (
             status = 401,
-            description = "The `session_id` and `csrf-token` don't evaluate to any active session",
+            description = "`horizon_session` and `X-CSRF-Token` don't evaluate to any active session",
             body = [Error],
             example = json!({
                 "kind": "session_not_found",
@@ -293,7 +314,10 @@ pub async fn logout(
     jar: CookieJar,
     session: Session,
 ) -> Result<CookieJar, Error> {
-    session.delete(&state.database).await?;
+    session
+        .delete(&state.database)
+        .await
+        .context("Deleting a session")?;
 
     Ok(jar.remove(Cookie::from(SESSION_COOKIE)))
 }
@@ -305,7 +329,7 @@ pub async fn logout(
     path = "/auth/logout_all",
     params(
         ("X-CSRF-Token" = String, Header, description = "Anti-CSRF token. Looks like 32 bytes encoded in hex"),
-        ("session_id" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
+        ("horizon_session" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
     ),
     responses(
         (
@@ -317,7 +341,7 @@ pub async fn logout(
         ),
         (
             status = 401,
-            description = "The passed cookie jar did not include a `session_id` cookie",
+            description = "The passed cookie jar did not include a `horizon_session` cookie",
             body = [Error],
             example = json!({
                 "kind": "session_cookie_missing",
@@ -337,7 +361,7 @@ pub async fn logout(
         ),
         (
             status = 401,
-            description = "The `session_id` and `csrf-token` don't evaluate to any active session",
+            description = "The `horizon_session` and `X-CSRF-Token` don't evaluate to any active session",
             body = [Error],
             example = json!({
                 "kind": "session_not_found",
@@ -362,7 +386,211 @@ pub async fn logout_all(
     jar: CookieJar,
     session: Session,
 ) -> Result<CookieJar, Error> {
-    session.delete_all(&state.database).await?;
+    session
+        .delete_all(&state.database)
+        .await
+        .context("Deleting a session")?;
+
+    Ok(jar.remove(Cookie::from(SESSION_COOKIE)))
+}
+
+/// Creates a new password reset token and emails a link to the account owner
+#[utoipa::path(
+    post,
+    tag = "Authentication",
+    path = "/auth/request_password_reset",
+    request_body = email::Address,
+    responses(
+        (
+            status = 200,
+            description = "\
+                A password reset email has been sent. \n\n\
+                If the user doesn't exist, the response will sill be 200 OK. This is to make it \
+                so the caller can't tell if an account with that address actually exists or not. \
+                They should be told that a verification email has been sent, even if it really \
+                wasn't.
+            "
+        ),
+        (
+            status = 400,
+            description = "The JSON was not correctly formatted or the email address is invalid",
+            body = [Error],
+            example = json!({
+                "kind": "bad_request",
+                "message": "Failed to deserialize the JSON body into the target type: missing field `email` at line 1 column 85",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        ),
+        (
+            status = 422,
+            description = "\
+                The SMTP relay gave a negative response, meaning it could not forward the message. \
+                While this could be the relay's fault, it most likely is because the address doesn't point \
+                to any valid smtp server. \
+            ",
+            body = [Error],
+            example = json!({
+                "kind": "email_failed",
+                "message": "Could not send email",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        ),
+        (
+            status = 500,
+            description = "Something went wrong and it's not the caller's fault",
+            body = [Error],
+            example = json!({
+                "kind": "unexpected",
+                "message": "Something unexpected happened",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        )
+    )
+)]
+pub async fn request_password_reset(
+    state: State<Arc<Horizon>>,
+    Json(address): Json<email::Address>,
+) -> Result<(), Error> {
+    let recipient = Mailbox::new(
+        None,
+        address
+            .email
+            .trim()
+            .parse()
+            .context("Parsing email address")?,
+    );
+
+    let token = Auth::new_password_reset_token(
+        address,
+        &state.database,
+        state.configuration.authentication.key,
+    )
+    .await
+    .context("Setting new password reset token")?;
+
+    let Some(token) = token else {
+        // Same side-channel possible as with signup.
+        return Ok(());
+    };
+
+    let email = Email::new(
+        &state.configuration.smtp.templates.password_reset,
+        &liquid::object!({"token": &token.hex(),}),
+        &state.configuration.smtp,
+        recipient,
+    )
+    .context("Creating verification email")?;
+
+    email.send().await.context("Sending password reset email")
+}
+
+/// Set the password to the given value for the user with the given reset token.
+///
+/// Logs out all sessions.
+#[utoipa::path(
+    post,
+    tag = "Authentication",
+    path = "/auth/reset_password",
+    request_body = password::ResetForm,
+    responses(
+        (
+            status = 200,
+            description = "The password has been changed"
+        ),
+        (
+            status = 400,
+            description = "The JSON was not correctly formatted",
+            body = [Error],
+            example = json!({
+                "kind": "bad_request",
+                "message": "Failed to deserialize the JSON body into the target type: missing field `email` at line 1 column 85",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        ),
+        (
+            status = 500,
+            description = "Something went wrong and it's not the caller's fault",
+            body = [Error],
+            example = json!({
+                "kind": "unexpected",
+                "message": "Something unexpected happened",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        )
+    )
+)]
+pub async fn reset_password(
+    state: State<Arc<Horizon>>,
+    jar: CookieJar,
+    Json(reset_form): Json<password::ResetForm>,
+) -> Result<CookieJar, Error> {
+    let user = reset_form
+        .reset_password(&state.database, state.configuration.authentication.key)
+        .await
+        .context("Resetting password via email")?;
+
+    // If the password has been reset, any existing sessions should be closed for security
+    Session::delete_all_unchecked(user, &state.database)
+        .await
+        .context("Deleting all sessions during password reset")?;
+
+    Ok(jar.remove(Cookie::from(SESSION_COOKIE)))
+}
+
+/// Change the user's password
+///
+/// Logs out all sessions.
+#[utoipa::path(
+    post,
+    tag = "Authentication",
+    path = "/auth/change_password",
+    params(
+        ("X-CSRF-Token" = String, Header, description = "Anti-CSRF token. Looks like 32 bytes encoded in hex"),
+        ("horizon_session" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
+    ),
+    request_body = password::ChangeForm,
+    responses(
+        (
+            status = 200,
+            description = "The password has been changed"
+        ),
+        (
+            status = 400,
+            description = "The JSON was not correctly formatted",
+            body = [Error],
+            example = json!({
+                "kind": "bad_request",
+                "message": "Failed to deserialize the JSON body into the target type: missing field `email` at line 1 column 85",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        ),
+        (
+            status = 500,
+            description = "Something went wrong and it's not the caller's fault",
+            body = [Error],
+            example = json!({
+                "kind": "unexpected",
+                "message": "Something unexpected happened",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        )
+    )
+)]
+pub async fn change_password(
+    state: State<Arc<Horizon>>,
+    jar: CookieJar,
+    session: Session,
+    Json(change_form): Json<password::ChangeForm>,
+) -> Result<CookieJar, Error> {
+    change_form
+        .change_password(session.user_id(), &state.database)
+        .await
+        .context("Changing password via logged in session")?;
+
+    session
+        .delete_all(&state.database)
+        .await
+        .context("Logging out all sessions after password change")?;
 
     Ok(jar.remove(Cookie::from(SESSION_COOKIE)))
 }

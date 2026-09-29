@@ -18,11 +18,14 @@ use metrics_opentelemetry::{
 };
 
 use opentelemetry::{InstrumentationScope, KeyValue};
-use opentelemetry_otlp::{LogExporter, Protocol, WithExportConfig};
-use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+use opentelemetry_otlp::{LogExporter, MetricExporter, Protocol, WithExportConfig};
+use opentelemetry_sdk::{
+    Resource,
+    metrics::{PeriodicReader, SdkMeterProvider},
+};
 
 use crate::{
-    authentication::Session,
+    authentication::session::Session,
     configuration::{Configuration, Observability},
     error::{Context, Error, ErrorKind},
     user::User,
@@ -50,7 +53,8 @@ impl State {
 
         initialize_logging(&configuration.observability).context("Initializing logging")?;
 
-        let meter_provider = initialize_metrics(&configuration.observability);
+        let meter_provider =
+            initialize_metrics(&configuration.observability).context("Initializing metrics")?;
 
         let database = initialize_database(&configuration)
             .await
@@ -141,28 +145,45 @@ fn initialize_logging(configuration: &Observability) -> Result<(), Error> {
     Ok(())
 }
 
-fn initialize_metrics(configuration: &Observability) -> Option<SdkMeterProvider> {
+fn initialize_metrics(configuration: &Observability) -> Result<Option<SdkMeterProvider>, Error> {
     configuration.opentelemetry.as_ref().map_or_else(
         || {
             log::trace!("Skipped initializing metrics. Opentelemetry is not configured.");
-
-            None
+            Ok(None)
         },
         |otel_config| {
-            let reader = PeriodicReader::builder(InMemoryMetricExporter::default())
-                .with_interval(Duration::from_millis(100))
+            let exporter = MetricExporter::builder()
+                .with_tonic()
+                .with_endpoint(&otel_config.endpoint)
+                .with_protocol(Protocol::Grpc)
+                .build()
+                .map_err(|err| {
+                    Error::new_with_source(
+                        ErrorKind::Unexpected,
+                        "Something unexpected happened".into(),
+                        "Building the otlp metric exporter",
+                        anyhow::Error::new(err),
+                    )
+                })?;
+
+            let reader = PeriodicReader::builder(exporter)
+                .with_interval(Duration::from_secs(1))
                 .build();
 
-            let provider = SdkMeterProvider::builder().with_reader(reader).build();
+            let resource = Resource::builder()
+                .with_attributes([
+                    KeyValue::new("service.name", otel_config.service_name.clone()),
+                    KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+                ])
+                .build();
+
+            let provider = SdkMeterProvider::builder()
+                .with_resource(resource)
+                .with_reader(reader)
+                .build();
 
             let scope = InstrumentationScope::builder(env!("CARGO_PKG_NAME"))
-                .with_attributes([
-                    KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
-                    KeyValue::new(
-                        "deployment.environment.name",
-                        otel_config.service_name.clone(),
-                    ),
-                ])
+                .with_version(env!("CARGO_PKG_VERSION"))
                 .build();
 
             let recorder = OpenTelemetryRecorder::new(OpenTelemetryMetrics::new(
@@ -179,7 +200,7 @@ fn initialize_metrics(configuration: &Observability) -> Option<SdkMeterProvider>
 
             log::trace!("Initialized metrics.");
 
-            Some(provider)
+            Ok(Some(provider))
         },
     )
 }

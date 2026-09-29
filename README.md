@@ -4,15 +4,15 @@
 ## Setup
 The officially supported way to build and deploy Horizon is through Nix.
 
-You can see a complete deployment example over at [VilaHack's infrastructure declaration's repository](https://github.com/VilaHack/Infrastructure)
+You can see a complete deployment example over at [VilaHack's infrastructure declaration's repository](https://github.com/VilaHack/Cosmos)
 
 ### Horizon's configuration
 You can find a configuration file example in the [examples directory](https://github.com/VilaHack/Horizon/tree/trunk/examples)
 
 ## Features
-- [ ] Authentication
+- [X] Authentication
   - [X] Sign up and log in
-  - [ ] Email verification and password reset
+  - [X] Email verification and password reset
   - [X] Session based authentication
   - [X] Access scopes
 - [ ] Applications

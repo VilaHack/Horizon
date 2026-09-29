@@ -1,13 +1,11 @@
 mod auth;
-mod credentials;
-mod session;
+pub mod credentials;
+pub mod session;
 mod token;
 
 pub use auth::Auth;
-pub use credentials::Credentials;
-pub use session::{Scope, Session, scoped};
-pub use token::{Token, VerificationToken};
+pub use token::{Token, VerificationToken, deserialize_token};
 
 #[derive(utoipa::OpenApi)]
-#[openapi(components(schemas(Credentials,)))]
+#[openapi(components(schemas(credentials::Credentials,)))]
 pub struct AuthModelDocs;
