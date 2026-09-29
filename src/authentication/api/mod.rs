@@ -9,6 +9,7 @@ const SESSION_COOKIE: &str = "session_id";
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(
     handlers::signup,
+    handlers::verify_email,
     handlers::login,
     handlers::logout,
     handlers::logout_all
@@ -18,6 +19,7 @@ pub struct AuthApiDocs;
 pub fn router() -> Router<Arc<crate::State>> {
     Router::new()
         .route("/signup", post(handlers::signup))
+        .route("/verify_email", post(handlers::verify_email))
         .route("/login", post(handlers::login))
         .route("/logout", post(handlers::logout))
         .route("/logout_all", post(handlers::logout_all))

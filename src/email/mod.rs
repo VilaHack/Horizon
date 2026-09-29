@@ -78,6 +78,8 @@ impl Email {
             .await
             .context("Sending email")?;
 
+        dbg!(&response);
+
         if response.is_positive() {
             Ok(())
         } else {

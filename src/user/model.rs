@@ -1,7 +1,11 @@
-use mongodb::{Database, bson::Uuid, error::ErrorKind as MdbErr, error::WriteFailure::WriteError};
+use mongodb::{
+    Database,
+    bson::{DateTime, Uuid},
+    error::{ErrorKind as MdbErr, WriteFailure::WriteError},
+};
 
 use crate::{
-    authentication::{Auth, Credentials, Token},
+    authentication::{Auth, Credentials, Token, VerificationToken},
     error::{Context, Error},
 };
 
@@ -28,11 +32,13 @@ impl User {
         database: &Database,
         key: &[u8; 32],
     ) -> Result<Option<String>, Error> {
-        let token = Token::try_from(&self.auth.email_verification_token.code[..])
-            .context("Building token from String")?;
+        let token = Token::new();
 
         // Keep the code on the database instead
-        self.auth.email_verification_token.code = token.hmac(key);
+        self.auth.email_verification_token = Some(VerificationToken {
+            code: token.hmac(key),
+            created_at: DateTime::now(),
+        });
 
         let result = database.collection::<Self>("users").insert_one(self).await;
 
@@ -57,7 +63,9 @@ impl TryFrom<Credentials> for User {
     fn try_from(value: Credentials) -> Result<Self, Self::Error> {
         Ok(Self {
             _id: Uuid::new(),
-            auth: value.try_into().context("TODO")?,
+            auth: value
+                .try_into()
+                .context("Creating a user from Credentials")?,
         })
     }
 }

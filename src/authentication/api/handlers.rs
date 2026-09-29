@@ -6,7 +6,7 @@ use lettre::message::Mailbox;
 
 use crate::{
     Json, State as Horizon,
-    authentication::{Credentials, Session, Token, api::SESSION_COOKIE},
+    authentication::{Auth, Credentials, Session, Token, api::SESSION_COOKIE},
     email::Email,
     error::{Context, Error},
     user::User,
@@ -104,12 +104,9 @@ pub async fn signup(
 }
 
 /// Verifies the email address of the user with the given email token
-///
-/// # Errors
-/// Described in utoipa macro
 #[utoipa::path(
     post,
-    path = "/api/v0/auth/verify_email",
+    path = "auth/verify_email",
     params(
         Credentials,
     ),
@@ -156,7 +153,12 @@ pub async fn verify_email(
     state: State<Arc<Horizon>>,
     Json(token): Json<Token>,
 ) -> Result<(), Error> {
-    Ok(())
+    Auth::verify_email(
+        &token,
+        &state.database,
+        state.configuration.authentication.key,
+    )
+    .await
 }
 
 /// Checks the credentials and adds a session cookie if valid

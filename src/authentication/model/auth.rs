@@ -2,10 +2,15 @@ use argon2::{
     Argon2, PasswordHasher,
     password_hash::{SaltString, rand_core::OsRng},
 };
-use mongodb::{Database, bson::{DateTime, doc}};
+
+use mongodb::{
+    Database,
+    bson::{DateTime, doc},
+};
 
 use crate::{
-    authentication::{Credentials, Scope, Token, model::token::HmacKey}, error::{Context, Error},
+    authentication::{Credentials, Scope, Token, VerificationToken, model::token::HmacKey},
+    error::{Context, Error, ErrorKind},
 };
 
 /// Represents a user's authentication details, as stored on the database
@@ -16,21 +21,47 @@ pub struct Auth {
     pub email_verified: bool,
     pub created_at: DateTime,
     pub scopes: Vec<Scope>,
-    pub email_verification_token: VerificationToken,
+    pub email_verification_token: Option<VerificationToken>,
     pub password_reset_token: Option<VerificationToken>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct VerificationToken {
-    pub code: String,
-    pub created_at: DateTime,
-}
-
 impl Auth {
-    pub async fn verify_email(token: &Token, database: &Database, key: HmacKey) -> Result<(), Error> {
-        let result = database.collection::<Auth>("users.auth").find_one_and_delete(doc! {"email_verification_token": token.hmac(key)})
+    /// Verifies an account from an token received via email
+    ///
+    /// # Errors
+    /// No unhappy paths. Will only return an error if the token doesn't exist or is expired.
+    pub async fn verify_email(
+        token: &Token,
+        database: &Database,
+        key: HmacKey,
+    ) -> Result<(), Error> {
+        let now = DateTime::now();
+        let fresh_after = now.saturating_add_millis(-1000 * 60 * 30); // 30m ago
 
-        todo!()
+        let filter = doc! {
+            "auth.email_verification_token.code": token.hmac(&key),
+            "auth.email_verification_token.created_at": doc! { "$gte": fresh_after },
+        };
+
+        let update = doc! {
+            "$set": doc! { "auth.email_verified": true },
+            "$unset": doc! { "auth.email_verification_token": "" },
+        };
+
+        let result = database
+            .collection::<Self>("users")
+            .update_one(filter, update)
+            .await?;
+
+        if result.matched_count == 0 {
+            return Err(Error::new(
+                ErrorKind::EmailTokenNotFound,
+                String::from("The token doesn't exist or is expired"),
+                "Verifying an account via email",
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -47,18 +78,13 @@ impl TryFrom<Credentials> for Auth {
             .context("Hashing password")?
             .to_string();
 
-        let token = Token::new();
-
         Ok(Self {
             email: value.email,
             password,
             email_verified: false,
             created_at: DateTime::now(),
             scopes: Vec::with_capacity(0),
-            email_verification_token: VerificationToken {
-                code: token.hex(),
-                created_at: DateTime::now(),
-            },
+            email_verification_token: None,
             password_reset_token: None,
         })
     }

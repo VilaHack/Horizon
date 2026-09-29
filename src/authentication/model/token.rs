@@ -94,3 +94,9 @@ where
         .try_into()
         .map_err(|bytes: Vec<u8>| de::Error::invalid_length(bytes.len(), &"exactly 32 bytes"))
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct VerificationToken {
+    pub code: String,
+    pub created_at: mongodb::bson::DateTime,
+}
