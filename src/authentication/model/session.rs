@@ -4,7 +4,7 @@ use axum::{extract::FromRequestParts, http::request::Parts};
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use mongodb::{
     Database,
-    bson::{DateTime, Uuid, doc},
+    bson::{DateTime, Document, Uuid, doc},
 };
 
 use crate::{
@@ -196,8 +196,8 @@ impl Session {
     pub async fn new_csrf_token(&self, key: &HmacKey, database: &Database) -> Result<Token, Error> {
         let csrf_token = Token::new();
 
-        let session: Option<Uuid> = database
-            .collection("sessions")
+        let session: Option<Document> = database
+            .collection::<Document>("sessions")
             .find_one_and_update(
                 doc! { "_id": &self._id },
                 doc! { "$set": { "csrf_token_hmac": csrf_token.hmac(key) } },
