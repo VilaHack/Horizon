@@ -151,7 +151,7 @@ impl ResetForm {
         let token = Token::from(self.token);
 
         let filter = doc! {
-            "auth.password_reset_token.code": token.hmac(&key),
+            "auth.password_reset_token.code": token.hmac(key),
             "auth.password_reset_token.created_at": doc! { "$gte": fresh_after },
         };
 

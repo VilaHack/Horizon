@@ -42,7 +42,7 @@ impl Auth {
         let fresh_after = now.saturating_add_millis(-1000 * 60 * 30); // 30m ago
 
         let filter = doc! {
-            "auth.email_verification_token.code": token.hmac(&key),
+            "auth.email_verification_token.code": token.hmac(key),
             "auth.email_verification_token.created_at": doc! { "$gte": fresh_after },
         };
 
@@ -118,7 +118,7 @@ impl Auth {
         let set_new_token = doc! {
             "$set": {
                 "auth.password_reset_token": {
-                    "code": token.hmac(&key),
+                    "code": token.hmac(key),
                     "created_at": now,
                 }
             }
@@ -140,7 +140,7 @@ impl Auth {
 
     /// Set a new email verification token for the user with the given email
     ///
-    /// Same leak possible here as with the new_password_reset_token method
+    /// Same leak possible here as with the `new_password_reset_token` method
     ///
     /// # Errors
     /// Will return an error if there's an issue communicating with the database.
@@ -185,7 +185,7 @@ impl Auth {
         let set_new_token = doc! {
             "$set": {
                 "auth.email_verification_token": {
-                    "code": token.hmac(&key),
+                    "code": token.hmac(key),
                     "created_at": now,
                 }
             }

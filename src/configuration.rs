@@ -10,7 +10,10 @@ use mongodb::options::ConnectionString;
 
 use serde::Deserialize;
 
-use crate::{authentication::Token, error::{Context, Error, ErrorKind}};
+use crate::{
+    authentication::Token,
+    error::{Context, Error, ErrorKind},
+};
 
 mod headervalues {
     use axum::http::HeaderValue;

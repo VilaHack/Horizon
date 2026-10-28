@@ -63,14 +63,17 @@ impl Session {
     /// # Errors
     /// May return an error if there's an issue communicating with the database
     ///
-    /// Will return an error if the `user` doesn't exist
+    /// Will return an error if the `user` doesn't exist or if their email is not verified
     #[allow(clippy::new_ret_no_self)]
     pub async fn new(user: Uuid, key: &HmacKey, database: &Database) -> Result<String, Error> {
         let token = Token::new();
 
         let user_projection: Option<ProjectedUser> = database
             .collection("users")
-            .find_one(doc! { "_id": user })
+            .find_one(doc! {
+                "_id": user,
+                "auth.email_verified": true,
+            })
             .projection(doc! { "team": 1, "auth.scopes": 1 })
             .await
             .context("Getting a user's team and scopes")?;
@@ -193,13 +196,13 @@ impl Session {
     pub async fn new_csrf_token(&self, key: &HmacKey, database: &Database) -> Result<Token, Error> {
         let csrf_token = Token::new();
 
-        let session: Option<String> = database
+        let session: Option<Uuid> = database
             .collection("sessions")
             .find_one_and_update(
                 doc! { "_id": &self._id },
-                doc! { "csrf_token_hmac": csrf_token.hmac(key) },
+                doc! { "$set": { "csrf_token_hmac": csrf_token.hmac(key) } },
             )
-            .projection(doc! {"_id": 1})
+            .projection(doc! { "_id": 1 })
             .await
             .context("Adding a new anti-CSRF token to a session")?;
 

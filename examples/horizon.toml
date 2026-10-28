@@ -14,10 +14,8 @@
 
 [authentication]
 # Random set of 32 bytes, used as the HMAC key.
-key = [
-  84, 75, 240, 186, 31, 133, 254, 240, 131, 113, 48, 113, 143, 10, 161, 154,
-  159, 198, 80, 114, 150, 145, 51, 250, 105, 105, 134, 89, 25, 176, 131, 184
-]
+key = { token = "797b74b52a4dfdf47d22121105694c1aa705ae2e1d2a6c18773cad2f0326c986" }
+
 session_timeout_ms = 28800000 # 8 hours
 domain = "my_ctf.com" # Domain the session cookie will be configured to.
                       # Subdomains of this will be able to read it.

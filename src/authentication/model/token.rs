@@ -6,9 +6,9 @@ pub type HmacKey = [u8; 32];
 
 /// A 32 byte token encoded as a hex string
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Deserialize, utoipa::ToSchema)]
-#[schema(example = json!({
+#[schema(examples(json!({
     "token": "f6551672a90f577ea24569c048076d322fce5679fdaa70cf0f82354d82bdf40b"
-}))]
+}),))]
 pub struct Token {
     #[serde(deserialize_with = "deserialize_token")]
     token: [u8; 32],
@@ -57,6 +57,8 @@ impl Token {
         mac.verify_slice(&hmac[..]).is_ok()
     }
 
+    /// Returns the raw token bytes
+    #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.token
     }
