@@ -125,11 +125,48 @@ impl Session {
             .collection::<Self>("sessions")
             .find_one_and_update(
                 doc! {
-                    "_id": session_token.hmac(&auth_config.key),
-                    "csrf_token_hmac": csrf_token.hmac(&auth_config.key),
+                    "_id": session_token.hmac(auth_config.key.as_bytes()),
+                    "csrf_token_hmac": csrf_token.hmac(auth_config.key.as_bytes()),
                     "last_seen_at": { "$gte": fresh_before }, // While MongoDB has more accurate time
-                }, // take advantage of indexes better
-                doc! { "$set": { "last_seen_at": now } }, // here, doing it like this lets us
+                }, //                                         // here, doing it like this lets us
+                doc! { "$set": { "last_seen_at": now } }, //  // take advantage of indexes better
+            )
+            .await
+            .context("Getting and updating a session")?
+        else {
+            return Err(Error::new(
+                ErrorKind::SessionNotFound,
+                "No valid session found for the provided token".into(),
+                "Getting and updating a session that doesn't exist",
+            ));
+        };
+
+        Ok(session)
+    }
+
+    /// Given a session token and without checking it's csrf token, get the associated session,
+    /// updating the `last_seen_at` timestamp
+    ///
+    /// # Errors
+    /// Will return an error if the given session token doesn't belong to any active sessions
+    ///
+    /// May return an error if there's an issue communicating with the database
+    pub async fn get_unchecked(
+        session_token: Token,
+        auth_config: &Authentication,
+        database: &Database,
+    ) -> Result<Self, Error> {
+        let now = DateTime::now();
+        let fresh_before = now.saturating_add_millis(-(auth_config.session_timeout_ms.abs()));
+
+        let Some(session) = database
+            .collection::<Self>("sessions")
+            .find_one_and_update(
+                doc! {
+                    "_id": session_token.hmac(auth_config.key.as_bytes()),
+                    "last_seen_at": { "$gte": fresh_before },
+                },
+                doc! { "$set": { "last_seen_at": now } },
             )
             .await
             .context("Getting and updating a session")?

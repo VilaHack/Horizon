@@ -10,7 +10,7 @@ use mongodb::options::ConnectionString;
 
 use serde::Deserialize;
 
-use crate::error::{Context, Error, ErrorKind};
+use crate::{authentication::Token, error::{Context, Error, ErrorKind}};
 
 mod headervalues {
     use axum::http::HeaderValue;
@@ -32,7 +32,7 @@ mod headervalues {
 #[derive(Deserialize, Debug)]
 pub struct Authentication {
     /// Secret key used for the HMAC algorithm
-    pub key: [u8; 32],
+    pub key: Token,
     /// How long in ms it takes for a session to be considered stale
     pub session_timeout_ms: i64,
     /// Domain the session cookie will be configured for

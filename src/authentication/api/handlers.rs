@@ -86,7 +86,10 @@ pub async fn signup(
     let mut user = User::try_from(credentials).context("Building user from credentials")?;
 
     let token = user
-        .insert(&state.database, &state.configuration.authentication.key)
+        .insert(
+            &state.database,
+            state.configuration.authentication.key.as_bytes(),
+        )
         .await
         .context("Inserting new user")?;
 
@@ -121,6 +124,79 @@ pub async fn signup(
     }
 
     send_result
+}
+
+/// Sends a verification email to the provided address
+///
+/// If the address is already verified, it won't send a verification email. It will still return
+/// 200 OK, as to not leak the existance of the verified address on the platform.
+#[utoipa::path(
+    post,
+    tag = "Authentication",
+    path = "/auth/request_email_verification",
+    request_body = email::Address,
+    responses(
+        (
+            status = 200,
+            description = "The email verification has been sent, or the request ignored if no such user exists"
+        ),
+        (
+            status = 400,
+            description = "The JSON was not correctly formatted or the email address is invalid",
+            body = [Error],
+            example = json!({
+                "kind": "bad_request",
+                "message": "Failed to deserialize the JSON body into the target type: missing field `token` at line 1 column 1",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        ),
+        (
+            status = 500,
+            description = "Something went wrong and it's not the caller's fault",
+            body = [Error],
+            example = json!({
+                "kind": "unexpected",
+                "message": "Something unexpected happened",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        )
+    )
+)]
+pub async fn request_email_verification(
+    state: State<Arc<Horizon>>,
+    Json(address): Json<email::Address>,
+) -> Result<(), Error> {
+    let recipient = Mailbox::new(
+        None,
+        address
+            .email
+            .trim()
+            .parse()
+            .context("Parsing email address")?,
+    );
+
+    let token = Auth::new_email_verification_token(
+        address,
+        &state.database,
+        state.configuration.authentication.key.as_bytes(),
+    )
+    .await
+    .context("Adding a new email verification token")?;
+
+    let Some(token) = token else {
+        // Same side-channel possible here as with sign-up
+        return Ok(());
+    };
+
+    let email = Email::new(
+        &state.configuration.smtp.templates.verification,
+        &liquid::object!({"token": &token.hex()}),
+        &state.configuration.smtp,
+        recipient,
+    )
+    .context("Creating verification email")?;
+
+    email.send().await.context("Sending verification email")
 }
 
 /// Verifies the email address of the user with the given email token
@@ -175,7 +251,7 @@ pub async fn verify_email(
     Auth::verify_email(
         &token,
         &state.database,
-        state.configuration.authentication.key,
+        state.configuration.authentication.key.as_bytes(),
     )
     .await
 }
@@ -235,7 +311,7 @@ pub async fn login(
 
     let session_id = Session::new(
         user_id,
-        &state.configuration.authentication.key,
+        state.configuration.authentication.key.as_bytes(),
         &state.database,
     )
     .await
@@ -251,7 +327,72 @@ pub async fn login(
     Ok(jar.add(cookie))
 }
 
-// TODO: Implement /me
+#[utoipa::path(
+    post,
+    tag = "Authentication",
+    path = "/auth/csrf",
+    params(
+        ("horizon_session" = String, Cookie, description = "Session ID. Looks like 32 bytes encoded in hex")
+    ),
+    responses(
+        (
+            status = 200,
+            body = [String],
+            description = "A new CSRF token has been generated"
+        ),
+        (
+            status = 401,
+            description = "The credentials don't evaluate to any user",
+            body = [Error],
+            example = json!({
+                "kind": "invalid_credentials",
+                "message": "Incorrect email or password",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        ),
+        (
+            status = 500,
+            description = "Something went wrong and it's not the caller's fault",
+            body = [Error],
+            example = json!({
+                "kind": "unexpected",
+                "message": "Something unexpected happened",
+                "request_id": "d44102b5-1e93-42ae-99fe-c208be4a958a"
+            })
+        )
+    )
+)]
+#[axum::debug_handler]
+pub async fn csrf(state: State<Arc<Horizon>>, jar: CookieJar) -> Result<axum::Json<String>, Error> {
+    let Some(session_cookie) = jar.get("horizon_session").map(Cookie::value) else {
+        return Err(Error::new(
+            ErrorKind::SessionCookieMissing,
+            "A session cookie was not provided for an operation requiring authentication".into(),
+            "Retrieving the session cookie from the cookie jar",
+        ));
+    };
+
+    let session_token =
+        Token::try_from(session_cookie).context("Building a token from the session cookie")?;
+
+    let session = Session::get_unchecked(
+        session_token,
+        &state.configuration.authentication,
+        &state.database,
+    )
+    .await
+    .context("Getting a session from a session token")?;
+
+    let token = session
+        .new_csrf_token(
+            state.configuration.authentication.key.as_bytes(),
+            &state.database,
+        )
+        .await
+        .context("Setting a new session token")?;
+
+    Ok(axum::Json(token.hex()))
+}
 
 /// Logs out the passed session
 #[utoipa::path(
@@ -463,7 +604,7 @@ pub async fn request_password_reset(
     let token = Auth::new_password_reset_token(
         address,
         &state.database,
-        state.configuration.authentication.key,
+        state.configuration.authentication.key.as_bytes(),
     )
     .await
     .context("Setting new password reset token")?;
@@ -525,7 +666,10 @@ pub async fn reset_password(
     Json(reset_form): Json<password::ResetForm>,
 ) -> Result<CookieJar, Error> {
     let user = reset_form
-        .reset_password(&state.database, state.configuration.authentication.key)
+        .reset_password(
+            &state.database,
+            state.configuration.authentication.key.as_bytes(),
+        )
         .await
         .context("Resetting password via email")?;
 

@@ -56,6 +56,10 @@ impl Token {
         mac.update(&self.token);
         mac.verify_slice(&hmac[..]).is_ok()
     }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.token
+    }
 }
 
 impl TryFrom<&str> for Token {

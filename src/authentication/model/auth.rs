@@ -36,7 +36,7 @@ impl Auth {
     pub async fn verify_email(
         token: &Token,
         database: &Database,
-        key: HmacKey,
+        key: &HmacKey,
     ) -> Result<(), Error> {
         let now = DateTime::now();
         let fresh_after = now.saturating_add_millis(-1000 * 60 * 30); // 30m ago
@@ -70,13 +70,18 @@ impl Auth {
 
     /// Set a new password reset token for the user with the given email
     ///
+    /// Technically this can leak information on which users exist on the platform?
+    /// In the 1 minute time window after an user has requested a password reset, an attacker could
+    /// run an enumeration attack and find that user. Frankly I'm not sure how worried I should be
+    /// about this
+    ///
     /// # Errors
     /// Will return an error if there's an issue communicating with the database.
     /// Will also return an error if it is called while a token created less than a minute ago exists.
     pub async fn new_password_reset_token(
         email: email::Address,
         database: &Database,
-        key: HmacKey,
+        key: &HmacKey,
     ) -> Result<Option<Token>, Error> {
         let token = Token::new();
         let now = DateTime::now();
@@ -113,6 +118,73 @@ impl Auth {
         let set_new_token = doc! {
             "$set": {
                 "auth.password_reset_token": {
+                    "code": token.hmac(&key),
+                    "created_at": now,
+                }
+            }
+        };
+
+        if database
+            .collection::<Self>("users")
+            .update_one(filter, set_new_token)
+            .await
+            .context("Setting a new password reset token")?
+            .matched_count
+            == 1
+        {
+            return Ok(Some(token));
+        }
+
+        Ok(None)
+    }
+
+    /// Set a new email verification token for the user with the given email
+    ///
+    /// Same leak possible here as with the new_password_reset_token method
+    ///
+    /// # Errors
+    /// Will return an error if there's an issue communicating with the database.
+    /// Will also return an error if it is called while a token created less than a minute ago exists.
+    pub async fn new_email_verification_token(
+        email: email::Address,
+        database: &Database,
+        key: &HmacKey,
+    ) -> Result<Option<Token>, Error> {
+        let token = Token::new();
+        let now = DateTime::now();
+        let one_minute_ago = now.saturating_add_millis(-1000 * 60); // 1m ago
+
+        // No more than one token per minute can be generated
+        let token_is_too_recent = doc! {
+            "auth.email": &email.email,
+            "auth.email_verification_token.created_at": { "$gt": one_minute_ago },
+        };
+
+        if database
+            .collection::<Self>("users")
+            .find_one(token_is_too_recent)
+            .await
+            .context("Checking for a recent password reset token")?
+            .is_some()
+        {
+            return Err(Error::new(
+                ErrorKind::EmailRequestTooSoon,
+                String::from("A password reset was requested too soon. Try again in a minute"),
+                "Setting a new password reset token",
+            ));
+        }
+
+        let filter = doc! {
+            "auth.email": &email.email,
+            "$or": [
+                { "auth.email_verification_token.created_at": { "$lte": one_minute_ago } },
+                { "auth.email_verification_token.created_at": { "$exists": false } },
+            ],
+        };
+
+        let set_new_token = doc! {
+            "$set": {
+                "auth.email_verification_token": {
                     "code": token.hmac(&key),
                     "created_at": now,
                 }

@@ -144,7 +144,7 @@ impl ResetForm {
     ///
     /// # Errors
     /// Will return an error if there's an issue communicating with the database or hashing the password.
-    pub async fn reset_password(&self, database: &Database, key: HmacKey) -> Result<Uuid, Error> {
+    pub async fn reset_password(&self, database: &Database, key: &HmacKey) -> Result<Uuid, Error> {
         let now = DateTime::now();
         let fresh_after = now.saturating_add_millis(-1000 * 60 * 30); // 30m ago
 

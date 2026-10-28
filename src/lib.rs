@@ -58,7 +58,7 @@ pub async fn run() -> Result<(), error::Error> {
 
     let cors_layer = tower_http::cors::CorsLayer::new()
         .allow_origin(state.configuration.http.allowed_origins.clone())
-        .allow_methods([Method::POST])
+        .allow_methods([Method::GET, Method::POST])
         .allow_headers([ACCEPT, CONTENT_TYPE]);
 
     let bind_address = state.configuration.http.bind_address;
