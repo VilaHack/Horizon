@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{post},
 };
 
 const SESSION_COOKIE: &str = "horizon_session";
@@ -33,7 +33,7 @@ pub fn router() -> Router<Arc<crate::State>> {
         )
         .route("/verify_email", post(handlers::verify_email))
         .route("/login", post(handlers::login))
-        .route("/csrf", get(handlers::csrf))
+        .route("/csrf", post(handlers::csrf))
         .route("/logout", post(handlers::logout))
         .route("/logout_all", post(handlers::logout_all))
         .route(

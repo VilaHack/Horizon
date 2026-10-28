@@ -337,7 +337,7 @@ pub async fn login(
     responses(
         (
             status = 200,
-            body = [String],
+            body = String,
             description = "A new CSRF token has been generated"
         ),
         (
